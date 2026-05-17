@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Training artifacts
+runs/
+checkpoints/
+wandb/
+data/replay/
+*.pt
+*.pth
+*.ckpt
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+

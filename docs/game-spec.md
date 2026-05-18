@@ -1,4 +1,4 @@
-# Game Specification: N-Dimensional Connect-K
+# Game Specification: N-Dimensional Connect-K With Gravity
 
 ## Parameters
 
@@ -8,17 +8,18 @@ An N-dimensional Connect-K game is defined by:
 N: number of dimensions
 shape: board size along each dimension
 K: number of connected pieces required to win
-gravity: whether moves fall along a gravity axis
-gravity_axis: axis pieces fall along when gravity is enabled
+gravity_axis: axis pieces fall along
 players: two-player zero-sum game
 ```
+
+Gravity is always enabled. HyperZero does not support a free-placement mode in the core game engine.
 
 Examples:
 
 ```text
-2D classic-style: shape=(6, 7), K=4, gravity=true
-3D target:        shape=(4, 4, 4), K=4, gravity=false or true
-4D stretch:       shape=(4, 4, 4, 4), K=4, gravity=false
+2D classic-style: shape=(6, 7), K=4, gravity_axis=0
+3D target:        shape=(4, 4, 4), K=4, gravity_axis=0
+4D stretch:       shape=(4, 4, 4, 4), K=4, gravity_axis=0
 ```
 
 ## Board State
@@ -41,21 +42,13 @@ Internally, states should be canonicalized from the current player's perspective
 
 ## Actions
 
-There are two action modes.
-
-### Free Placement
-
-The player chooses any empty coordinate in the N-dimensional board.
-
-For shape `(4, 4, 4)`, the action space has up to 64 legal actions.
-
-### Gravity Placement
+Moves always use gravity.
 
 The player chooses a coordinate across all non-gravity dimensions. The piece occupies the lowest available cell along the gravity axis.
 
 For shape `(4, 4, 4)` with gravity along axis 0, the action space has up to 16 columns.
 
-Gravity mode reduces branching factor but adds rule-specific geometry. Free placement is easier to generalize across dimensions and should be implemented first.
+This keeps the action space smaller than free placement while preserving the defining structure of Connect-style games. The implementation should treat a move as an `(N-1)`-dimensional column coordinate plus the resolved landing cell.
 
 ## Winning Lines
 
@@ -98,7 +91,7 @@ A draw occurs when:
 ```text
 shape=(6, 7)
 K=4
-gravity=true
+gravity_axis=0
 ```
 
 Purpose: Validate against known Connect Four intuition.
@@ -108,7 +101,7 @@ Purpose: Validate against known Connect Four intuition.
 ```text
 shape=(4, 4, 4)
 K=4
-gravity=false
+gravity_axis=0
 ```
 
 Purpose: First serious higher-dimensional learning task.
@@ -118,7 +111,7 @@ Purpose: First serious higher-dimensional learning task.
 ```text
 shape=(4, 4, 4, 4)
 K=4
-gravity=false
+gravity_axis=0
 ```
 
 Purpose: Stress test search, memory, architecture, and training throughput.
@@ -135,4 +128,3 @@ The engine should separate:
 - agent-facing canonicalization
 
 Winning lines can be precomputed once per game configuration and reused for every state. This is likely simpler and less error-prone than scanning in every direction after each move during the first implementation.
-

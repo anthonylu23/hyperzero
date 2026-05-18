@@ -6,13 +6,13 @@ HyperZero: AlphaZero-Style Self-Play for N-Dimensional Connect-K
 
 ## Summary
 
-HyperZero explores reinforcement learning in a generalized family of Connect-K games played on N-dimensional boards. The project will implement a configurable game environment, baseline agents, and an AlphaZero-style training system using neural-guided Monte Carlo Tree Search. The central research goal is to understand how search, learning, and model architecture scale as classic 2D Connect-style games are extended into 3D, 4D, and potentially higher dimensions.
+HyperZero explores reinforcement learning in a generalized family of Connect-K games played on N-dimensional boards with gravity. The project will implement a configurable game environment, baseline agents, and an AlphaZero-style training system using neural-guided Monte Carlo Tree Search. The central research goal is to understand how search, learning, and model architecture scale as classic 2D Connect-style games are extended into 3D, 4D, and potentially higher dimensions.
 
 The project is designed to be valuable even if the hardest 4D setting proves computationally expensive. The main contribution is a rigorous experimental platform and a set of controlled results about what makes higher-dimensional self-play tractable.
 
 ## Motivation
 
-AlphaZero demonstrated that self-play reinforcement learning can produce strong agents in perfect-information games without handcrafted strategy. Most well-known examples use games with established rule sets and rich human history, such as Go, chess, and shogi. HyperZero instead studies a clean game family whose complexity can be tuned directly through dimensionality, board size, connect length, and gravity rules.
+AlphaZero demonstrated that self-play reinforcement learning can produce strong agents in perfect-information games without handcrafted strategy. Most well-known examples use games with established rule sets and rich human history, such as Go, chess, and shogi. HyperZero instead studies a clean game family whose complexity can be tuned directly through dimensionality, board size, connect length, and gravity-axis geometry.
 
 N-dimensional Connect-K is attractive because it is simple to define, easy to visualize at small sizes, and combinatorially rich. Moving from 2D to 3D and 4D increases the number of cells, possible lines, tactical threats, and branching factors. This creates a natural testbed for studying how AlphaZero-style methods scale.
 
@@ -31,7 +31,7 @@ This project asks:
 3. Which neural architecture is most effective for configurable N-dimensional boards?
 4. Does curriculum learning from smaller or lower-dimensional boards improve training on harder variants?
 5. Do board symmetries improve sample efficiency and final playing strength?
-6. How do gravity and free-placement rules affect branching factor, game length, and learnability?
+6. How do gravity-axis choices and board shapes affect branching factor, game length, and learnability?
 
 ## Methodology
 
@@ -71,5 +71,4 @@ Another risk is implementation complexity. The project should prioritize a minim
 
 ## Proposed Abstract
 
-This project explores AlphaZero-style reinforcement learning in a generalized family of N-dimensional Connect-K games. We implement a configurable game engine supporting arbitrary board dimensions, connect lengths, and gravity rules, then train neural-guided MCTS agents through self-play. Using 2D Connect Four as a validation benchmark, we scale to 3D and 4D variants to study how dimensionality affects search complexity, learning efficiency, and model architecture requirements. We compare pure MCTS, heuristic agents, and learned policy-value networks, and evaluate whether curriculum learning and symmetry augmentation improve training. The goal is to understand how well self-play reinforcement learning transfers from classic board games to higher-dimensional abstract strategy environments.
-
+This project explores AlphaZero-style reinforcement learning in a generalized family of N-dimensional Connect-K games with gravity. We implement a configurable game engine supporting arbitrary board dimensions, connect lengths, and gravity axes, then train neural-guided MCTS agents through self-play. Using 2D Connect Four as a validation benchmark, we scale to 3D and 4D variants to study how dimensionality affects search complexity, learning efficiency, and model architecture requirements. We compare pure MCTS, heuristic agents, and learned policy-value networks, and evaluate whether curriculum learning and symmetry augmentation improve training. The goal is to understand how well self-play reinforcement learning transfers from classic board games to higher-dimensional abstract strategy environments.

@@ -2,7 +2,7 @@
 
 AlphaZero-style self-play for N-dimensional Connect-K.
 
-HyperZero is a reinforcement learning research project focused on a configurable family of abstract strategy games: Connect-K played on N-dimensional boards. The project starts with a rigorous game engine and baseline agents, then builds toward neural-guided Monte Carlo Tree Search, self-play training, and experiments on how dimensionality affects learning and search.
+HyperZero is a reinforcement learning research project focused on a configurable family of abstract strategy games: Connect-K played on N-dimensional boards with gravity. The project starts with a rigorous game engine and baseline agents, then builds toward neural-guided Monte Carlo Tree Search, self-play training, and experiments on how dimensionality affects learning and search.
 
 ## Core Goal
 
@@ -34,4 +34,3 @@ Planning and repository initialization.
 ## Working Name
 
 HyperZero: AlphaZero-Style Self-Play for N-Dimensional Connect-K
-

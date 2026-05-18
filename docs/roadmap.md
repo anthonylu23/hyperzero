@@ -19,7 +19,7 @@ Goal: Build a reliable N-dimensional Connect-K environment.
 Deliverables:
 
 - Board representation using NumPy arrays or compact tensors
-- Configurable board shape, connect length, and gravity mode
+- Configurable board shape, connect length, and gravity axis
 - Legal move generation
 - Move application and player switching
 - Fast terminal-state detection
@@ -96,7 +96,7 @@ Candidate experiments:
 - MLP versus transformer over board cells
 - Direct 3D training versus curriculum learning
 - Symmetry augmentation versus no augmentation
-- Gravity versus free placement
+- Gravity-axis and board-shape variants
 - Different MCTS simulation budgets
 
 Exit criteria:
@@ -133,4 +133,3 @@ Deliverables:
 Exit criteria:
 
 - A reader can understand the game, reproduce core experiments, and inspect trained-agent behavior.
-

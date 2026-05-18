@@ -68,7 +68,7 @@ Variant:
 ```text
 shape=(6, 7)
 K=4
-gravity=true
+gravity_axis=0
 ```
 
 Purpose:
@@ -86,7 +86,7 @@ Variant:
 ```text
 shape=(4, 4, 4)
 K=4
-gravity=false
+gravity_axis=0
 ```
 
 Purpose:
@@ -104,7 +104,7 @@ Variant:
 ```text
 shape=(4, 4, 4)
 K=4
-gravity=false
+gravity_axis=0
 ```
 
 Compare MCTS budgets:
@@ -124,7 +124,7 @@ Variant:
 ```text
 shape=(4, 4, 4)
 K=4
-gravity=false
+gravity_axis=0
 ```
 
 Compare:
@@ -171,7 +171,7 @@ Variant:
 ```text
 shape=(4, 4, 4, 4)
 K=4
-gravity=false
+gravity_axis=0
 ```
 
 Purpose:
@@ -205,4 +205,3 @@ Each experiment should record:
 - number of self-play games
 - MCTS simulations per move
 - hardware notes
-

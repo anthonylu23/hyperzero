@@ -85,7 +85,10 @@ def policy_to_action_tensor(policy: np.ndarray, config: GameConfig) -> np.ndarra
     return coerce_policy(policy, config).reshape(config.action_shape)
 
 
-def action_tensor_to_policy(action_tensor: np.ndarray, config: GameConfig) -> np.ndarray:
+def action_tensor_to_policy(
+    action_tensor: np.ndarray,
+    config: GameConfig,
+) -> np.ndarray:
     """Flatten an action-grid tensor into policy/action order."""
     action_tensor = np.asarray(action_tensor)
     if action_tensor.shape != config.action_shape:

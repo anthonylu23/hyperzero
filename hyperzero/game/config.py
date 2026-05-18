@@ -121,7 +121,9 @@ class GameConfig:
 
     def cell_coord(self, flat_index: int) -> tuple[int, ...]:
         """Return the full board coordinate for a flat cell index."""
-        return tuple(int(value) for value in np.unravel_index(int(flat_index), self.shape))
+        return tuple(
+            int(value) for value in np.unravel_index(int(flat_index), self.shape)
+        )
 
     def validate_action_index(self, action: int) -> None:
         """Raise ValueError if action is outside the action space."""
@@ -145,7 +147,7 @@ class GameConfig:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "GameConfig":
+    def from_dict(cls, data: dict[str, object]) -> GameConfig:
         """Build a config from a serialized config dictionary."""
         return cls(
             shape=tuple(int(size) for size in data["shape"]),  # type: ignore[index]

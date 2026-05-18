@@ -25,7 +25,7 @@ class GameReplay:
         state: GameState,
         *,
         metadata: dict[str, Any] | None = None,
-    ) -> "GameReplay":
+    ) -> GameReplay:
         """Build a replay from a state that still has move history."""
         return cls(
             config=state.config,
@@ -42,7 +42,7 @@ class GameReplay:
         actions: tuple[int, ...] | list[int],
         *,
         metadata: dict[str, Any] | None = None,
-    ) -> "GameReplay":
+    ) -> GameReplay:
         """Play actions and return a replay with the resulting outcome."""
         state = GameState.new(config)
         for action in actions:
@@ -67,7 +67,7 @@ class GameReplay:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "GameReplay":
+    def from_dict(cls, data: dict[str, Any]) -> GameReplay:
         """Build a replay from a dictionary produced by to_dict."""
         return cls(
             config=GameConfig.from_dict(data["config"]),

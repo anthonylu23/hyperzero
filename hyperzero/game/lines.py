@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from itertools import product
-from typing import Iterable
 
 import numpy as np
 
@@ -68,7 +68,10 @@ def generate_winning_lines(shape: Iterable[int], connect_k: int) -> np.ndarray:
     return np.asarray(lines, dtype=np.int32)
 
 
-def build_lines_by_cell(num_cells: int, winning_lines: np.ndarray) -> tuple[tuple[int, ...], ...]:
+def build_lines_by_cell(
+    num_cells: int,
+    winning_lines: np.ndarray,
+) -> tuple[tuple[int, ...], ...]:
     """Return line ids containing each flat cell index."""
     if num_cells <= 0:
         raise ValueError("num_cells must be positive")

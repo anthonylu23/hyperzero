@@ -57,7 +57,11 @@ def test_policy_action_tensor_round_trip() -> None:
 def test_sample_action_respects_legal_mask() -> None:
     rng = np.random.default_rng(0)
     samples = {
-        sample_action(np.array([0.0, 0.0, 1.0]), np.array([False, True, False]), rng=rng)
+        sample_action(
+            np.array([0.0, 0.0, 1.0]),
+            np.array([False, True, False]),
+            rng=rng,
+        )
         for _ in range(10)
     }
 

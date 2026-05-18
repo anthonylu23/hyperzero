@@ -21,8 +21,13 @@ The stretch target is:
 ```text
 hyperzero/
   game/                Core N-dimensional Connect-K engine
+  agents/              Random, tactical, heuristic, and pure-MCTS baselines
+  search/              Reusable Monte Carlo Tree Search
+  eval/                Head-to-head matchup evaluation
 benchmarks/
   benchmark_engine.py  Engine throughput smoke benchmark
+scripts/
+  evaluate_baselines.py  Baseline matchup runner
 docs/
   proposal.md          Research proposal and project framing
   roadmap.md           Milestones and implementation phases
@@ -36,8 +41,9 @@ tests/
 
 ## Project Status
 
-Core game engine implemented with tests. Baseline agents, search, models,
-self-play, and evaluation are still upcoming.
+Core game engine, baseline agents, pure MCTS search, and head-to-head
+evaluation are implemented with tests. Models, self-play, and training are
+still upcoming.
 
 ## Working Name
 

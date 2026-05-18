@@ -19,17 +19,25 @@ The stretch target is:
 ## Repository Structure
 
 ```text
+hyperzero/
+  game/                Core N-dimensional Connect-K engine
+benchmarks/
+  benchmark_engine.py  Engine throughput smoke benchmark
 docs/
   proposal.md          Research proposal and project framing
   roadmap.md           Milestones and implementation phases
   architecture.md      Planned system architecture
   experiments.md       Experimental design and evaluation metrics
   game-spec.md         N-dimensional Connect-K rules and definitions
+  engine.md            Core engine API notes
+tests/
+  test_*.py            Engine unit tests
 ```
 
 ## Project Status
 
-Planning and repository initialization.
+Core game engine implemented with tests. Baseline agents, search, models,
+self-play, and evaluation are still upcoming.
 
 ## Working Name
 

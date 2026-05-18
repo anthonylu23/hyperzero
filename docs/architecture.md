@@ -89,7 +89,9 @@ terminal status
 
 ## Neural Model
 
-The first model should be a residual MLP over a flattened board.
+The first model is a v1 residual MLP over a flattened board. It is intentionally
+minimal: useful for verifying data flow, policy/value losses, checkpointing, and
+PUCT integration before introducing larger architecture experiments.
 
 Inputs:
 
@@ -117,13 +119,20 @@ Graph neural networks are a stretch architecture if time permits.
 
 ## Training Loop
 
-The minimal AlphaZero loop:
+The v1 training loop implements the smallest useful AlphaZero-style cycle:
 
 1. Generate self-play games with current model plus MCTS.
 2. Store `(state, MCTS policy, outcome)` examples.
 3. Train policy-value network on replay buffer.
-4. Evaluate new checkpoint against previous best and baselines.
-5. Promote checkpoint if it passes a win-rate threshold.
+4. Evaluate against configured baselines when requested.
+5. Save a checkpoint and append per-iteration metrics to JSONL.
+
+Arena evaluation and promotion are deliberately deferred until the basic loop is
+stable. Standalone checkpoint and checkpoint-series evaluation scripts provide
+the current promotion signal. The default search API remains simple and
+single-state, but v1 training can optionally use batched self-play: many active
+games select PUCT leaves independently, then their leaf states are evaluated in
+one batched model call.
 
 Training losses:
 
@@ -166,4 +175,3 @@ Use TensorBoard or Weights & Biases. Track at minimum:
 4. 3D training result.
 5. Architecture experiments.
 6. 4D stretch.
-

@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--residual-blocks", type=int, default=1)
     parser.add_argument(
         "--model-type",
-        choices=("mlp", "line_mlp", "cnn", "resnet", "transformer"),
+        choices=("mlp", "line_mlp", "cnn", "resnet", "line_resnet", "transformer"),
         default="mlp",
     )
     parser.add_argument(
@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--checkpoint-dir", type=Path, default=None)
     parser.add_argument("--checkpoint-keep-last", type=int, default=None)
+    parser.add_argument("--resume-from-checkpoint", type=Path, default=None)
     parser.add_argument("--metrics-path", type=Path, default=None)
     parser.add_argument("--eval-games", type=int, default=0)
     parser.add_argument(
@@ -82,6 +83,7 @@ def main() -> None:
             device=args.device,
             checkpoint_dir=args.checkpoint_dir,
             checkpoint_keep_last=args.checkpoint_keep_last,
+            resume_from_checkpoint=args.resume_from_checkpoint,
             metrics_path=args.metrics_path,
             eval_games_per_iteration=args.eval_games,
             eval_opponents=tuple(args.eval_opponents),

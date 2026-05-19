@@ -17,6 +17,7 @@ ModelType = Literal[
     "line_mlp",
     "cnn",
     "resnet",
+    "line_resnet",
     "transformer",
 ]
 
@@ -52,6 +53,13 @@ def build_policy_value_model(
             config,
             hidden_size=hidden_size,
             residual_blocks=residual_blocks,
+        )
+    if model_type == "line_resnet":
+        return PolicyValueCNN.from_config(
+            config,
+            hidden_size=hidden_size,
+            residual_blocks=residual_blocks,
+            line_features=True,
         )
     if model_type == "transformer":
         return PolicyValueTransformer.from_config(

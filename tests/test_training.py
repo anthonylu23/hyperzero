@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 
 import numpy as np
+import torch
 
 from hyperzero.game import GameConfig, GameReplay
 from hyperzero.search import PolicyValueEvaluation, PUCTConfig
@@ -210,3 +211,60 @@ def test_train_v1_runs_batched_self_play(tmp_path) -> None:
     assert logged_metric["eval_inference_time_seconds"] == 0.0
     assert logged_metric["eval_inference_batches"] == 0
     assert logged_metric["eval_inference_states"] == 0
+
+
+def test_train_v1_resumes_from_checkpoint_with_replay_state(tmp_path) -> None:
+    config = GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0)
+
+    first = train_v1(
+        TrainingConfig(
+            game_config=config,
+            iterations=1,
+            self_play_games_per_iteration=1,
+            puct_simulations=1,
+            training_steps_per_iteration=1,
+            batch_size=4,
+            replay_capacity=32,
+            hidden_size=8,
+            residual_blocks=0,
+            model_type="line_resnet",
+            seed=0,
+            checkpoint_dir=tmp_path,
+            checkpoint_keep_last=2,
+        )
+    )
+    checkpoint_path = first.metrics[0].checkpoint_path
+    assert checkpoint_path is not None
+
+    resumed = train_v1(
+        TrainingConfig(
+            game_config=config,
+            iterations=2,
+            self_play_games_per_iteration=1,
+            puct_simulations=1,
+            training_steps_per_iteration=1,
+            batch_size=4,
+            replay_capacity=32,
+            hidden_size=8,
+            residual_blocks=0,
+            model_type="line_resnet",
+            seed=0,
+            checkpoint_dir=tmp_path,
+            checkpoint_keep_last=2,
+            resume_from_checkpoint=checkpoint_path,
+        )
+    )
+
+    assert len(resumed.metrics) == 1
+    assert resumed.metrics[0].iteration == 2
+    assert resumed.metrics[0].replay_size > first.metrics[0].replay_size
+    assert tmp_path.joinpath("iteration_0002.pt").exists()
+    raw = torch.load(
+        tmp_path / "iteration_0002.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    assert "replay_buffer" in raw
+    assert "numpy_rng_state" in raw
+    assert "augment_rng_state" in raw
+    assert len(raw["metrics"]) == 2

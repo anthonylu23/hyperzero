@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import shutil
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -62,6 +63,7 @@ class TrainingConfig:
     device: str = "cpu"
     checkpoint_dir: str | Path | None = None
     checkpoint_keep_last: int | None = None
+    resume_from_checkpoint: str | Path | None = None
     metrics_path: str | Path | None = None
     eval_games_per_iteration: int = 0
     eval_opponents: tuple[str, ...] = ()
@@ -94,7 +96,14 @@ class TrainingConfig:
             raise ValueError("weight_decay must be nonnegative")
         if self.value_weight < 0.0:
             raise ValueError("value_weight must be nonnegative")
-        if self.model_type not in ("mlp", "line_mlp", "cnn", "resnet", "transformer"):
+        if self.model_type not in (
+            "mlp",
+            "line_mlp",
+            "cnn",
+            "resnet",
+            "line_resnet",
+            "transformer",
+        ):
             raise ValueError(f"unknown model_type: {self.model_type}")
         if self.symmetry_augmentation not in ("none", "random"):
             raise ValueError("symmetry_augmentation must be 'none' or 'random'")
@@ -195,6 +204,9 @@ def train_v1(
     torch.manual_seed(config.seed)
     rng = np.random.default_rng(config.seed)
     device = resolve_device(config.device)
+    resume_payload: dict[str, Any] | None = None
+    start_iteration = 1
+    previous_metrics: list[TrainingMetrics] = []
     model = (
         build_policy_value_model(
             config.game_config,
@@ -213,18 +225,38 @@ def train_v1(
         weight_decay=config.weight_decay,
     )
     replay = ReplayBuffer(config.replay_capacity, seed=config.seed)
+    if config.resume_from_checkpoint is not None:
+        resume_payload = _load_resume_payload(config.resume_from_checkpoint, device)
+        _restore_training_state(
+            resume_payload,
+            config=config,
+            model=model,
+            optimizer=optimizer,
+            replay=replay,
+            self_play_rng=rng,
+        )
+        start_iteration = int(resume_payload["iteration"]) + 1
+        previous_metrics = _deserialize_metrics(
+            resume_payload.get("metrics", resume_payload.get("previous_metrics", []))
+        )
     search_config = PUCTConfig(
         simulations=config.puct_simulations,
         c_puct=config.c_puct,
     )
-    metrics: list[TrainingMetrics] = []
+    metrics: list[TrainingMetrics] = list(previous_metrics)
     model_parameters = count_parameters(model)
     augment_rng = np.random.default_rng(config.seed + 100_000)
+    if resume_payload is not None and "augment_rng_state" in resume_payload:
+        augment_rng.bit_generator.state = resume_payload["augment_rng_state"]
     best_eval_score: float | None = None
     best_checkpoint_path: str | None = None
+    for previous_metric in metrics:
+        if previous_metric.best_eval_score is not None:
+            best_eval_score = previous_metric.best_eval_score
+            best_checkpoint_path = previous_metric.best_checkpoint_path
     training_start = time.perf_counter()
 
-    for iteration in range(1, config.iterations + 1):
+    for iteration in range(start_iteration, config.iterations + 1):
         iteration_start = time.perf_counter()
         evaluator = NeuralEvaluator(model, device=device)
         self_play_start = time.perf_counter()
@@ -266,9 +298,8 @@ def train_v1(
         )
         eval_time_seconds = time.perf_counter() - eval_start
         loss_summary = _summarize_losses(losses)
-        checkpoint_start = time.perf_counter()
-        checkpoint_path = _save_checkpoint(config, model, optimizer, iteration, metrics)
         eval_score = _score_evaluations(config, evaluations)
+        checkpoint_path = _checkpoint_path(config, iteration)
         is_best_checkpoint = (
             checkpoint_path is not None
             and eval_score is not None
@@ -276,13 +307,9 @@ def train_v1(
         )
         if is_best_checkpoint:
             best_eval_score = eval_score
-            best_checkpoint_path = _copy_best_checkpoint(checkpoint_path)
-        if checkpoint_path is not None:
-            _prune_checkpoints(
-                Path(checkpoint_path).parent,
-                keep_last=config.checkpoint_keep_last,
+            best_checkpoint_path = str(
+                Path(checkpoint_path).parent / "best_by_eval_score.pt"
             )
-        checkpoint_time_seconds = time.perf_counter() - checkpoint_start
         iteration_time_seconds = time.perf_counter() - iteration_start
         total_training_time_seconds = time.perf_counter() - training_start
         self_play_inference_time_seconds = evaluator.inference_time_seconds
@@ -363,13 +390,38 @@ def train_v1(
                 total_inference_time_seconds,
                 total_inference_states,
             ),
-            checkpoint_time_seconds=checkpoint_time_seconds,
+            checkpoint_time_seconds=0.0,
             checkpoint_path=checkpoint_path,
         )
+        checkpoint_start = time.perf_counter()
+        saved_checkpoint_path = _save_checkpoint(
+            config,
+            model,
+            optimizer,
+            replay,
+            self_play_rng=rng,
+            augment_rng=augment_rng,
+            iteration=iteration,
+            metrics=[*metrics, metric],
+        )
+        if saved_checkpoint_path is not None and is_best_checkpoint:
+            best_checkpoint_path = _copy_best_checkpoint(saved_checkpoint_path)
+        if saved_checkpoint_path is not None:
+            _prune_checkpoints(
+                Path(saved_checkpoint_path).parent,
+                keep_last=config.checkpoint_keep_last,
+            )
+        checkpoint_time_seconds = time.perf_counter() - checkpoint_start
+        metric = _replace_metric_checkpoint_time(metric, checkpoint_time_seconds)
         metrics.append(metric)
         _append_metrics_jsonl(config, metric)
 
-    return TrainingResult(model=model, metrics=tuple(metrics), replay_size=len(replay))
+    new_metrics = metrics[len(previous_metrics) :]
+    return TrainingResult(
+        model=model,
+        metrics=tuple(new_metrics),
+        replay_size=len(replay),
+    )
 
 
 def _training_step(
@@ -520,15 +572,19 @@ def _save_checkpoint(
     config: TrainingConfig,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
+    replay: ReplayBuffer,
+    *,
+    self_play_rng: np.random.Generator,
+    augment_rng: np.random.Generator,
     iteration: int,
-    previous_metrics: list[TrainingMetrics],
+    metrics: list[TrainingMetrics],
 ) -> str | None:
-    if config.checkpoint_dir is None:
+    path = _checkpoint_path(config, iteration)
+    if path is None:
         return None
 
-    checkpoint_dir = Path(config.checkpoint_dir)
+    checkpoint_dir = Path(path).parent
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    path = checkpoint_dir / f"iteration_{iteration:04d}.pt"
     torch.save(
         {
             "checkpoint_version": 1,
@@ -539,12 +595,81 @@ def _save_checkpoint(
             "training_config": _serializable_training_config(config),
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
+            "replay_buffer": replay.state_dict(),
             "torch_rng_state": torch.random.get_rng_state(),
-            "previous_metrics": [asdict(metric) for metric in previous_metrics],
+            "numpy_rng_state": self_play_rng.bit_generator.state,
+            "augment_rng_state": augment_rng.bit_generator.state,
+            "metrics": [asdict(metric) for metric in metrics],
+            "previous_metrics": [asdict(metric) for metric in metrics[:-1]],
         },
         path,
     )
     return str(path)
+
+
+def _checkpoint_path(config: TrainingConfig, iteration: int) -> str | None:
+    if config.checkpoint_dir is None:
+        return None
+    return str(Path(config.checkpoint_dir) / f"iteration_{iteration:04d}.pt")
+
+
+def _replace_metric_checkpoint_time(
+    metric: TrainingMetrics,
+    checkpoint_time_seconds: float,
+) -> TrainingMetrics:
+    return replace(metric, checkpoint_time_seconds=checkpoint_time_seconds)
+
+
+def _load_resume_payload(
+    checkpoint_path: str | Path,
+    device: torch.device,
+) -> dict[str, Any]:
+    return torch.load(
+        Path(checkpoint_path),
+        map_location=device,
+        weights_only=False,
+    )
+
+
+def _restore_training_state(
+    payload: dict[str, Any],
+    *,
+    config: TrainingConfig,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    replay: ReplayBuffer,
+    self_play_rng: np.random.Generator,
+) -> None:
+    checkpoint_config = GameConfig.from_dict(payload["game_config"])
+    if checkpoint_config.to_dict() != config.game_config.to_dict():
+        raise ValueError("resume checkpoint game_config does not match TrainingConfig")
+    checkpoint_training_config = dict(payload.get("training_config", {}))
+    for key in ("model_type", "hidden_size", "residual_blocks"):
+        expected = getattr(config, key)
+        actual = checkpoint_training_config.get(key)
+        if actual is not None and actual != expected:
+            raise ValueError(
+                f"resume checkpoint {key}={actual!r} does not match config "
+                f"{expected!r}"
+            )
+    if int(payload["iteration"]) >= config.iterations:
+        raise ValueError("resume checkpoint iteration is already at or past iterations")
+    model.load_state_dict(payload["model_state_dict"])
+    optimizer.load_state_dict(payload["optimizer_state_dict"])
+    replay_payload = payload.get("replay_buffer")
+    if replay_payload is None:
+        raise ValueError("resume checkpoint does not include replay_buffer state")
+    replay.load_state_dict(replay_payload)
+    torch_rng_state = payload.get("torch_rng_state")
+    if torch_rng_state is not None:
+        torch.random.set_rng_state(torch_rng_state.cpu())
+    numpy_rng_state = payload.get("numpy_rng_state")
+    if numpy_rng_state is not None:
+        self_play_rng.bit_generator.state = numpy_rng_state
+
+
+def _deserialize_metrics(rows: list[dict[str, Any]]) -> list[TrainingMetrics]:
+    return [TrainingMetrics(**row) for row in rows]
 
 
 def _copy_best_checkpoint(checkpoint_path: str) -> str:
@@ -609,6 +734,12 @@ def _serializable_training_config(config: TrainingConfig) -> dict[str, object]:
         "device": config.device,
         "checkpoint_dir": (
             None if config.checkpoint_dir is None else str(config.checkpoint_dir)
+        ),
+        "checkpoint_keep_last": config.checkpoint_keep_last,
+        "resume_from_checkpoint": (
+            None
+            if config.resume_from_checkpoint is None
+            else str(config.resume_from_checkpoint)
         ),
         "metrics_path": (
             None if config.metrics_path is None else str(config.metrics_path)

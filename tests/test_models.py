@@ -35,6 +35,7 @@ def test_policy_value_model_variants_match_configured_shapes() -> None:
         "line_mlp": GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0),
         "cnn": GameConfig(shape=(4, 4, 4), connect_k=4, gravity_axis=0),
         "resnet": GameConfig(shape=(4, 4, 4), connect_k=4, gravity_axis=0),
+        "line_resnet": GameConfig(shape=(4, 4, 4), connect_k=4, gravity_axis=0),
         "transformer": GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0),
     }
     for model_type, config in configs_by_model.items():

@@ -48,6 +48,7 @@ class PolicyValueCNN(nn.Module):
         *,
         hidden_size: int = 128,
         residual_blocks: int = 2,
+        line_features: bool = False,
     ) -> None:
         super().__init__()
         if len(config.shape) not in (2, 3):
@@ -63,10 +64,24 @@ class PolicyValueCNN(nn.Module):
         self.num_actions = config.num_actions
         self.hidden_size = int(hidden_size)
         self.residual_blocks = int(residual_blocks)
+        self.line_features = bool(line_features)
+        input_channels = 3 if self.line_features else 1
+        if self.line_features:
+            lines = torch.as_tensor(config.winning_lines, dtype=torch.long)
+            line_cell = torch.zeros((len(lines), config.num_cells), dtype=torch.float32)
+            for line_index, line in enumerate(lines):
+                line_cell[line_index, line] = 1.0
+            weights = torch.tensor(
+                [0.0, *[10.0**count for count in range(1, config.connect_k + 1)]],
+                dtype=torch.float32,
+            )
+            self.register_buffer("lines", lines, persistent=False)
+            self.register_buffer("line_cell", line_cell, persistent=False)
+            self.register_buffer("line_weights", weights, persistent=False)
         conv = _conv_nd(self.rank)
         pool = _adaptive_pool_nd(self.rank)
         self.stem = nn.Sequential(
-            conv(1, self.hidden_size, kernel_size=3, padding=1),
+            conv(input_channels, self.hidden_size, kernel_size=3, padding=1),
             nn.ReLU(),
         )
         self.trunk = nn.Sequential(
@@ -96,12 +111,14 @@ class PolicyValueCNN(nn.Module):
         *,
         hidden_size: int = 128,
         residual_blocks: int = 2,
+        line_features: bool = False,
     ) -> PolicyValueCNN:
         """Build a model sized for a game configuration."""
         return cls(
             config,
             hidden_size=hidden_size,
             residual_blocks=residual_blocks,
+            line_features=line_features,
         )
 
     def forward(self, board: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -115,10 +132,41 @@ class PolicyValueCNN(nn.Module):
                 f"board must have shape ({self.num_cells},) or batch x cells"
             )
 
-        x = board.reshape((board.shape[0], 1, *self.shape))
+        x = self._input_planes(board)
         hidden = self.trunk(self.stem(x))
         policy_logits = self.policy_head(hidden)
         value = self.value_head(hidden).squeeze(-1)
         if squeeze_batch:
             return policy_logits.squeeze(0), value.squeeze(0)
         return policy_logits, value
+
+    def _input_planes(self, board: torch.Tensor) -> torch.Tensor:
+        board_plane = board.reshape((board.shape[0], 1, *self.shape))
+        if not self.line_features:
+            return board_plane
+
+        own = (board > 0).to(dtype=torch.float32)
+        opponent = (board < 0).to(dtype=torch.float32)
+        line_own = own[:, self.lines].sum(dim=-1).to(dtype=torch.long)
+        line_opponent = opponent[:, self.lines].sum(dim=-1).to(dtype=torch.long)
+        open_own = torch.where(
+            line_opponent == 0,
+            self.line_weights[line_own],
+            torch.zeros_like(line_own, dtype=torch.float32),
+        )
+        open_opponent = torch.where(
+            line_own == 0,
+            self.line_weights[line_opponent],
+            torch.zeros_like(line_opponent, dtype=torch.float32),
+        )
+        own_cell_scores = torch.log1p(open_own @ self.line_cell)
+        opponent_cell_scores = torch.log1p(open_opponent @ self.line_cell)
+        feature_planes = torch.stack(
+            (
+                board,
+                own_cell_scores,
+                opponent_cell_scores,
+            ),
+            dim=1,
+        )
+        return feature_planes.reshape((board.shape[0], 3, *self.shape))

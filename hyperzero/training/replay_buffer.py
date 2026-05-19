@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -51,3 +52,22 @@ class ReplayBuffer:
         indices = self.rng.choice(len(self.examples), size=size, replace=False)
         snapshot = list(self.examples)
         return [snapshot[int(index)] for index in indices]
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return a serializable replay state for training checkpoints."""
+        return {
+            "capacity": self.capacity,
+            "examples": list(self.examples),
+            "rng_state": self.rng.bit_generator.state,
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore replay examples and RNG state from a checkpoint payload."""
+        capacity = int(state["capacity"])
+        if capacity != self.capacity:
+            raise ValueError(
+                f"replay capacity mismatch: checkpoint={capacity} "
+                f"config={self.capacity}"
+            )
+        self.examples = deque(state["examples"], maxlen=self.capacity)
+        self.rng.bit_generator.state = state["rng_state"]

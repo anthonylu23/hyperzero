@@ -387,6 +387,9 @@ def train_command(
     checkpoint_keep_last = config.get("checkpoint_keep_last")
     if checkpoint_keep_last is not None:
         command.extend(["--checkpoint-keep-last", str(checkpoint_keep_last)])
+    resume_from_checkpoint = config.get("resume_from_checkpoint")
+    if resume_from_checkpoint is not None and not benchmark:
+        command.extend(["--resume-from-checkpoint", str(resume_from_checkpoint)])
     return command
 
 
@@ -435,6 +438,19 @@ def summarize_config(
         encoding="utf-8",
     )
     return summary
+
+
+def eval_series_selection_args(config: dict[str, Any]) -> list[str]:
+    args: list[str] = []
+    if "eval_checkpoint_stride" in config:
+        args.extend(["--checkpoint-stride", str(config["eval_checkpoint_stride"])])
+    if config.get("eval_latest_only", False):
+        args.append("--latest-only")
+    if config.get("eval_best_only", False):
+        args.append("--best-only")
+    if "eval_max_checkpoints" in config:
+        args.extend(["--max-checkpoints", str(config["eval_max_checkpoints"])])
+    return args
 
 
 def run_config(
@@ -509,6 +525,7 @@ def run_config(
                 device,
                 "--jsonl-output",
                 str(config_dir / "eval-series.jsonl"),
+                *eval_series_selection_args(config),
             ],
             config_dir / "eval-series.log",
             timeout=max(60.0, (cutoff - datetime.now()).total_seconds() - 120.0),

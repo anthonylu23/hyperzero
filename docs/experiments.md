@@ -193,6 +193,38 @@ Report:
 Variant | Agent | Eval Budget | Win % vs Random | Win % vs Heuristic | Win % vs MCTS | Avg Game Length
 ```
 
+## Phase 3 3D Target Gate - 2026-05-19
+
+Artifacts:
+
+```text
+runs/phase3_3d_target_20260519-121124/
+```
+
+Configs:
+
+```text
+5x5x5 K=4 line_resnet + random symmetry, 120 iterations, 48 games/iter, 48 sims
+5x5x5 K=4 resnet control + random symmetry, 140 iterations, 48 games/iter, 48 sims
+4x4x4 K=4 line_resnet filler + random symmetry, 80 iterations, 48 games/iter, 48 sims
+```
+
+Final checkpoint evals used 200 games per opponent for the 5x5x5 target/control and 160 games per opponent for the 4x4x4 filler. Trace evals reran 100 games versus the heuristic opponent and exported eight loss traces per config.
+
+```text
+Config                         Random  Tactical  Heuristic  MCTS-32  Trace heuristic
+5x5x5 line_resnet target       100.0%    95.5%      76.5%   100.0%            74.0%
+5x5x5 resnet control           100.0%    93.5%      61.0%   100.0%            61.0%
+4x4x4 line_resnet filler       100.0%    81.9%      21.3%   100.0%            22.0%
+```
+
+Key readout:
+
+- The 5x5x5 line-aware target cleared the initial 3D gate and materially outperformed the plain ResNet control against the heuristic baseline.
+- Both 5x5x5 models beat random, tactical, and MCTS-32 strongly under the current eval protocol.
+- The 4x4x4 filler exposed a sharp heuristic weakness despite high random/MCTS scores, so heuristic-specific traces remain required before promoting 3D agents.
+- In all trace exports, sampled losses included moves that allowed opponent immediate wins; tactical threat defense is still the main failure mode to improve before larger 3D/4D scaling.
+
 ## Reproducibility Requirements
 
 Each experiment should record:

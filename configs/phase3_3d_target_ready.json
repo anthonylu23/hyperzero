@@ -1,0 +1,60 @@
+[
+  {
+    "batch": 512,
+    "blocks": 3,
+    "checkpoint_keep_last": 5,
+    "connect_k": 4,
+    "estimate_minutes": 120,
+    "eval_checkpoint_stride": 10,
+    "eval_games": 24,
+    "eval_max_checkpoints": 5,
+    "eval_simulations": 32,
+    "eval_interval": 5,
+    "final_games": 200,
+    "games": 48,
+    "hidden": 128,
+    "iterations": 120,
+    "max_active_games": 48,
+    "model_type": "line_resnet",
+    "name": "target_3d_5x5x5_line_resnet_sym",
+    "replay_capacity": 200000,
+    "series_games": 24,
+    "shape": [
+      5,
+      5,
+      5
+    ],
+    "simulations": 48,
+    "steps": 96,
+    "symmetry_augmentation": "random"
+  },
+  {
+    "batch": 512,
+    "blocks": 3,
+    "checkpoint_keep_last": 5,
+    "connect_k": 4,
+    "estimate_minutes": 150,
+    "eval_checkpoint_stride": 10,
+    "eval_games": 24,
+    "eval_max_checkpoints": 5,
+    "eval_simulations": 32,
+    "eval_interval": 5,
+    "final_games": 200,
+    "games": 48,
+    "hidden": 128,
+    "iterations": 140,
+    "max_active_games": 48,
+    "model_type": "resnet",
+    "name": "target_3d_5x5x5_resnet_sym_longer",
+    "replay_capacity": 200000,
+    "series_games": 24,
+    "shape": [
+      5,
+      5,
+      5
+    ],
+    "simulations": 48,
+    "steps": 96,
+    "symmetry_augmentation": "random"
+  }
+]

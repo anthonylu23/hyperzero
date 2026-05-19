@@ -95,8 +95,11 @@ def test_train_v1_runs_one_iteration_and_writes_checkpoint(tmp_path) -> None:
             puct_simulations=1,
             training_steps_per_iteration=1,
             batch_size=4,
+            replay_capacity=16,
             hidden_size=8,
             residual_blocks=0,
+            model_type="line_mlp",
+            symmetry_augmentation="random",
             seed=0,
             checkpoint_dir=tmp_path,
             eval_games_per_iteration=1,
@@ -127,15 +130,46 @@ def test_train_v1_runs_one_iteration_and_writes_checkpoint(tmp_path) -> None:
     assert logged_metric["total_loss_max"] >= logged_metric["total_loss"]
     assert logged_metric["training_steps"] == 1
     assert logged_metric["batch_size"] == 4
+    assert logged_metric["replay_capacity"] == 16
     assert logged_metric["puct_simulations"] == 1
+    assert logged_metric["model_type"] == "line_mlp"
+    assert logged_metric["model_parameters"] > 0
+    assert logged_metric["symmetry_augmentation"] == "random"
+    assert logged_metric["eval_score"] is not None
+    assert logged_metric["best_eval_score"] == logged_metric["eval_score"]
+    assert logged_metric["is_best_checkpoint"] is True
+    assert tmp_path.joinpath("best_by_eval_score.pt").exists()
     assert logged_metric["eval_games"] == 1
     assert logged_metric["eval_opponents"] == ["random"]
     assert logged_metric["eval_simulations"] == 1
     assert "agent_a_win_rate" in logged_metric["evaluations"]["random"]
+    assert logged_metric["iteration_time_seconds"] > 0.0
+    assert logged_metric["total_training_time_seconds"] > 0.0
+    assert logged_metric["self_play_time_seconds"] > 0.0
+    assert logged_metric["self_play_time_per_game_seconds"] > 0.0
+    assert logged_metric["self_play_time_per_example_seconds"] > 0.0
+    assert logged_metric["self_play_inference_time_seconds"] >= 0.0
+    assert logged_metric["self_play_inference_batches"] > 0
+    assert logged_metric["self_play_inference_states"] > 0
+    assert logged_metric["training_step_time_seconds"] > 0.0
+    assert logged_metric["training_time_per_step_seconds"] > 0.0
+    assert logged_metric["eval_time_seconds"] > 0.0
+    assert logged_metric["eval_inference_time_seconds"] >= 0.0
+    assert logged_metric["eval_inference_batches"] > 0
+    assert logged_metric["eval_inference_states"] > 0
+    assert logged_metric["total_inference_time_seconds"] >= (
+        logged_metric["self_play_inference_time_seconds"]
+    )
+    assert logged_metric["total_inference_batches"] == (
+        logged_metric["self_play_inference_batches"]
+        + logged_metric["eval_inference_batches"]
+    )
+    assert logged_metric["checkpoint_time_seconds"] >= 0.0
 
     checkpoint = load_training_checkpoint(metric.checkpoint_path)
     assert checkpoint.iteration == 1
     assert checkpoint.game_config.shape == config.shape
+    assert checkpoint.training_config["model_type"] == "line_mlp"
 
 
 def test_train_v1_runs_batched_self_play(tmp_path) -> None:
@@ -151,6 +185,7 @@ def test_train_v1_runs_batched_self_play(tmp_path) -> None:
             batch_size=4,
             hidden_size=8,
             residual_blocks=0,
+            model_type="cnn",
             seed=0,
             checkpoint_dir=tmp_path,
             batched_self_play=True,
@@ -169,3 +204,9 @@ def test_train_v1_runs_batched_self_play(tmp_path) -> None:
     assert logged_metric["eval_opponents"] == []
     assert logged_metric["batched_self_play"] is True
     assert logged_metric["max_active_self_play_games"] == 2
+    assert logged_metric["model_type"] == "cnn"
+    assert logged_metric["eval_score"] is None
+    assert logged_metric["eval_time_seconds"] >= 0.0
+    assert logged_metric["eval_inference_time_seconds"] == 0.0
+    assert logged_metric["eval_inference_batches"] == 0
+    assert logged_metric["eval_inference_states"] == 0

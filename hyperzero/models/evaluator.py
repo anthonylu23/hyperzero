@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -30,6 +31,9 @@ class NeuralEvaluator:
 
     model: PolicyValueModel
     device: str | torch.device = "cpu"
+    inference_time_seconds: float = 0.0
+    inference_batches: int = 0
+    inference_states: int = 0
 
     def evaluate(self, state: GameState) -> PolicyValueEvaluation:
         """Return raw model outputs for one state."""
@@ -48,7 +52,13 @@ class NeuralEvaluator:
 
         self.model.eval()
         with torch.no_grad():
+            self._synchronize_if_cuda(device)
+            start = time.perf_counter()
             policy_logits, value = self.model(board)
+            self._synchronize_if_cuda(device)
+            self.inference_time_seconds += time.perf_counter() - start
+            self.inference_batches += 1
+            self.inference_states += len(states)
 
         logits_array = policy_logits.detach().cpu().numpy().astype(np.float64)
         value_array = value.detach().cpu().numpy().astype(np.float64)
@@ -59,3 +69,8 @@ class NeuralEvaluator:
             )
             for index in range(len(states))
         ]
+
+    @staticmethod
+    def _synchronize_if_cuda(device: torch.device) -> None:
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)

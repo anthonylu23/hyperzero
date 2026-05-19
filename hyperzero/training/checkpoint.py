@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from torch import nn
 
 from hyperzero.agents import AlphaZeroAgent
 from hyperzero.game.config import GameConfig
-from hyperzero.models import NeuralEvaluator, PolicyValueMLP
+from hyperzero.models import NeuralEvaluator, build_policy_value_model
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,7 +21,7 @@ class LoadedCheckpoint:
     path: Path
     iteration: int
     game_config: GameConfig
-    model: PolicyValueMLP
+    model: nn.Module
     training_config: dict[str, Any]
     raw: dict[str, Any]
 
@@ -55,8 +56,9 @@ def load_training_checkpoint(
     )
     game_config = GameConfig.from_dict(raw["game_config"])
     training_config = dict(raw.get("training_config", {}))
-    model = PolicyValueMLP.from_config(
+    model = build_policy_value_model(
         game_config,
+        model_type=str(training_config.get("model_type", "mlp")),
         hidden_size=int(training_config.get("hidden_size", 64)),
         residual_blocks=int(training_config.get("residual_blocks", 1)),
     )
@@ -109,8 +111,9 @@ def build_untrained_agent(
     resolved_device = resolve_device(device)
     torch.manual_seed(0 if seed is None else seed)
     training_config = {} if training_config is None else training_config
-    model = PolicyValueMLP.from_config(
+    model = build_policy_value_model(
         game_config,
+        model_type=str(training_config.get("model_type", "mlp")),
         hidden_size=int(training_config.get("hidden_size", 64)),
         residual_blocks=int(training_config.get("residual_blocks", 1)),
     )

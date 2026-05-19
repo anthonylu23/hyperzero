@@ -44,6 +44,12 @@ Implemented:
 - gravity-preserving random symmetry augmentation
 - weighted eval score tracking and `best_by_eval_score.pt`
 - optional checkpoint retention with `--checkpoint-keep-last`
+- resumable training checkpoints with model, optimizer, replay, Torch RNG, and
+  NumPy RNG state
+- checkpoint-series downsampling with stride/latest/best/max-checkpoint controls
+- loss-game trace export for evals, including neural prior entropy, value
+  estimates, selected actions, top actions, immediate wins, and missed tactical
+  threats
 - GPU experiment runner with benchmark, train, eval-series, final eval, GPU
   snapshots, and explicit co-scheduling via `--allow-existing-compute`
 
@@ -172,6 +178,47 @@ Use `--checkpoint-keep-last N` for large runs on quota-constrained disks. This
 keeps the latest `N` `iteration_*.pt` files plus `best_by_eval_score.pt`,
 without dropping `metrics.jsonl`.
 
+Resume a run from a full training checkpoint:
+
+```bash
+python3 scripts/train_v1.py \
+  --shape 5 5 5 \
+  --connect-k 4 \
+  --iterations 120 \
+  --model-type line_resnet \
+  --checkpoint-dir /tmp/hyperzero-3d-target \
+  --resume-from-checkpoint /tmp/hyperzero-3d-target/iteration_0080.pt
+```
+
+New checkpoints include replay state, optimizer state, and RNG state. Old
+checkpoints remain valid for evaluation, but cannot be exact training resume
+points if they do not contain `replay_buffer`.
+
+For cheaper eval curves, downsample checkpoint-series evals:
+
+```bash
+python3 scripts/evaluate_checkpoint_series.py \
+  --checkpoint-dir /tmp/hyperzero-3d-target \
+  --opponents random tactical heuristic \
+  --games 24 \
+  --simulations 32 \
+  --checkpoint-stride 10 \
+  --max-checkpoints 5 \
+  --jsonl-output /tmp/hyperzero-3d-target/eval-series.jsonl
+```
+
+For heuristic-loss debugging, export traces:
+
+```bash
+python3 scripts/evaluate_checkpoint.py \
+  --checkpoint /tmp/hyperzero-3d-target/iteration_0120.pt \
+  --opponent heuristic \
+  --games 100 \
+  --simulations 32 \
+  --trace-losses-output /tmp/hyperzero-3d-target/heuristic-losses.json \
+  --json-output /tmp/hyperzero-3d-target/final-heuristic.json
+```
+
 ## Checkpoint Evaluation
 
 Evaluate one checkpoint:
@@ -240,20 +287,33 @@ conda run -n torch python scripts/train_v1.py \
 
 ## Next Full V1 Run
 
-The first larger 2D and 3D v1 experiment block is complete. Next work should
-focus on improving robustness rather than adding another blind sweep:
+The first larger 2D and 3D v1 experiment block is complete, and the run-risk
+items needed before the next 3D target experiment are now implemented:
 
-- Add a first-class experiment manifest for these GPU runs instead of relying
-  on ad hoc `/tmp` JSON shards.
-- Add resumable training from checkpoints, including replay state if we want
-  exact continuation.
-- Add checkpoint-series downsampling controls so eval-series cost is explicit
-  instead of controlled indirectly by checkpoint pruning.
-- Investigate why heuristic matchups are much harder on 10x10 K=5 and larger
-  3D boards; prioritize line-aware conv/resnet features or stronger tactical
-  curriculum data before moving to higher dimensions.
-- Promote ResNet as the default v1 architecture for serious 3D runs and keep
-  line-MLP as a diagnostic/comparison model.
+- Resumable checkpoints include replay and RNG state.
+- Eval-series can be downsampled explicitly.
+- Loss traces can be exported for heuristic failures.
+- `line_resnet` adds open-line feature planes to the ResNet input.
+- `configs/phase3_3d_target_ready.json` defines the next target manifest.
+
+Recommended target command:
+
+```bash
+ssh anthonylu@anthonypc
+cd /tmp/hyperzero-codex
+conda run -n torch python -u scripts/run_gpu_experiments.py \
+  --run-root /tmp/hyperzero-gpu-runs-phase3-3d-target \
+  --cutoff 09:30 \
+  --device cuda \
+  --config-json configs/phase3_3d_target_ready.json \
+  --allow-existing-compute \
+  --min-gpu-free-mb 1000 \
+  --max-gpu-utilization 100
+```
+
+The target manifest compares `5x5x5 K=4 line_resnet` against a longer ResNet
+baseline. The goal is to beat the previous best 5x5x5 ResNet heuristic result
+of 63.1% while preserving high tactical and MCTS-32 results.
 
 The older 2D validation command remains below for reference.
 
@@ -345,4 +405,5 @@ fails early instead of silently falling back to CPU.
   checkpoint replacement.
 - The v1 model implementations are initial baselines. ResNet is the strongest
   default so far, but the architecture search is not final.
-- Training is not resumable from optimizer/replay state yet.
+- Resume is exact for new checkpoints, but old checkpoints without replay state
+  remain evaluation-only.

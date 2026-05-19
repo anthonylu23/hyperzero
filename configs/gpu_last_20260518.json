@@ -1,0 +1,36 @@
+[
+  {
+    "batch": 256,
+    "blocks": 3,
+    "connect_k": 4,
+    "estimate_minutes": 6,
+    "eval_games": 4,
+    "eval_simulations": 12,
+    "final_games": 8,
+    "games": 16,
+    "hidden": 224,
+    "iterations": 12,
+    "name": "3d_6x6x4_k4_last",
+    "series_games": 4,
+    "shape": [6, 6, 4],
+    "simulations": 16,
+    "steps": 32
+  },
+  {
+    "batch": 256,
+    "blocks": 3,
+    "connect_k": 5,
+    "estimate_minutes": 6,
+    "eval_games": 4,
+    "eval_simulations": 12,
+    "final_games": 8,
+    "games": 16,
+    "hidden": 224,
+    "iterations": 8,
+    "name": "2d_12x12_k5_last",
+    "series_games": 4,
+    "shape": [12, 12],
+    "simulations": 16,
+    "steps": 32
+  }
+]

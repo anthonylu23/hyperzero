@@ -43,3 +43,10 @@ def test_generate_winning_lines_includes_4d_hyperdiagonal() -> None:
     }
 
     assert ((0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2)) in coords
+
+
+def test_generate_winning_lines_deduplicates_connect_one_cells() -> None:
+    lines = generate_winning_lines((2, 2), 1)
+
+    assert lines.shape == (4, 1)
+    assert {tuple(line) for line in lines} == {(0,), (1,), (2,), (3,)}

@@ -97,17 +97,20 @@ Phase 3 validation runs:
   comparison on 4x4 Connect-3 improved a two-iteration smoke run from `6.13s`
   to `4.08s`; a small 3D batched smoke completed successfully.
 
-Remaining Phase 3 improvements before serious long 3D runs:
+Deferred Phase 3 improvements:
 
 - Add root Dirichlet noise and temperature scheduling if exploration is too weak.
 - Add best-checkpoint selection/promotion if repeated long runs need automatic
   checkpoint management.
 
-Status for moving forward: complete enough for the first 3D smoke experiment.
+Status for moving forward: complete. The v1 loop has now supported completed
+2D validation, promoted 3D training, and 4D feasibility runs.
 
 ## Phase 4: 3D Target Experiment
 
 Goal: Demonstrate meaningful learning on 3D 4x4x4 Connect-4.
+
+Status: complete for the 4x4x4 stability gate.
 
 Deliverables:
 
@@ -119,11 +122,22 @@ Deliverables:
 
 Exit criteria:
 
-- AlphaZero-style agent beats random, heuristic, and pure-MCTS baselines under a fixed evaluation budget.
+- AlphaZero-style agent beats random, heuristic, and pure-MCTS baselines under a fixed evaluation budget: complete.
+
+Current result:
+
+- Guarded 4x4x4 line-ResNet, 120 iterations, 48 games/iteration, 64 PUCT
+  simulations.
+- Final evals over 160 games per opponent: `100.0%` vs random, `97.5%` vs
+  tactical, `94.4%` vs heuristic, and `99.4%` vs MCTS-32.
+- Loss improved from `3.44` to `2.43`; GPU telemetry stayed stable.
 
 ## Phase 5: Architecture and Training Experiments
 
 Goal: Compare design choices.
+
+Status: partially complete, with the most important finding already folded into
+the promoted 3D run.
 
 Candidate experiments:
 
@@ -137,9 +151,21 @@ Exit criteria:
 
 - At least three controlled experiments with plots and written analysis.
 
+Current result:
+
+- Line-aware models materially improved tactical/heuristic performance versus
+  plain controls in 3D experiments.
+- Root tactical guarding is now enabled in PUCT by default and fixed the
+  immediate one-ply blunder mode that appeared in earlier traces.
+- GPU experiment tooling now records telemetry and supports custom eval score
+  weights for best-checkpoint selection.
+
 ## Phase 6: 4D Stretch
 
 Goal: Scale the system to 4D 4x4x4x4 Connect-4.
+
+Status: complete as a feasibility and bottleneck-finding phase; active research
+continues because 4D strength is still weak against tactical/heuristic baselines.
 
 Deliverables:
 
@@ -150,9 +176,73 @@ Deliverables:
 
 Exit criteria:
 
-- A clear result about whether the existing system scales directly or which components become limiting.
+- A clear result about whether the existing system scales directly or which components become limiting: complete.
 
-## Phase 7: Interface and Final Report
+Current result:
+
+- 4D smoke, initial training, and heuristic continuation all completed with
+  finite losses, checkpoint evals, loss traces, and GPU telemetry.
+- The best completed continuation reached `100.0%` vs random, `43.8%` vs
+  tactical, `25.0%` vs heuristic, and `96.9%` vs MCTS-32 in final evals.
+- Interpretation: the system runs in 4D and learns general play, but current
+  self-play/search still fails to consistently prevent forks and tactical
+  threats.
+- Active follow-up: `phase6_4d_tactical_weighted_20260519` raises search to
+  32 PUCT simulations and weights best-checkpoint selection toward heuristic
+  and tactical opponents. This run is currently paused on `anthonypc` for a
+  Windows reboot.
+
+## Phase 7: Universal Multi-Dimensional Agent
+
+Goal: Train one agent that can play 2D, 3D, and 4D Connect-K variants with a
+single shared model.
+
+Status: planned.
+
+Motivation:
+
+- The current checkpoints are specialized by board shape and action space.
+- A universal agent would test whether learned Connect-K concepts transfer
+  across dimensionality instead of being memorized per geometry.
+- A shared model may improve 4D sample efficiency by reusing tactical patterns
+  learned from cheaper 2D and 3D games.
+
+Required design changes:
+
+- Shape-conditioned observations: encode board dimensionality, board extents,
+  connect length, gravity axis, and legal-action mask.
+- Variable action spaces: support policy heads that can score legal moves for
+  different board/action shapes without retraining a separate output layer per
+  variant.
+- Dimension-aware architecture: prefer token/coordinate or line-incidence
+  models over fixed flattened MLP heads. Candidate first model is a
+  coordinate-conditioned transformer or line-token model.
+- Mixed-game replay: store game config with every replay example and sample
+  balanced batches across 2D, 3D, and 4D curricula.
+- Mixed-game self-play scheduler: interleave cheap 2D/3D games with smaller
+  4D batches, with explicit promotion gates per dimension.
+- Evaluation harness: report per-variant win rates and an aggregate score, but
+  prevent strong 2D performance from hiding weak 4D play.
+
+Initial curriculum:
+
+```text
+2D: 6x7 K=4 and small 4x4 K=3 validation games
+3D: 4x4x4 K=4 promoted stability target
+4D: 4x4x4x4 K=4 tactical/heuristic stress target
+```
+
+Exit criteria:
+
+- A single checkpoint loads once and can legally play all selected 2D, 3D, and
+  4D variants.
+- The shared agent beats random and tactical baselines in each dimension under
+  fixed per-dimension search budgets.
+- The shared agent is compared against specialist checkpoints to quantify
+  transfer benefit or cost.
+- Per-dimension evals, loss curves, and resource telemetry are documented.
+
+## Phase 8: Interface and Final Report
 
 Goal: Make the project understandable and demonstrable.
 

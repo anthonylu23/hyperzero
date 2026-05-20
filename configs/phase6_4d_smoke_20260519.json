@@ -1,0 +1,32 @@
+[
+  {
+    "batch": 128,
+    "blocks": 2,
+    "checkpoint_keep_last": 3,
+    "connect_k": 4,
+    "estimate_minutes": 20,
+    "eval_checkpoint_stride": 1,
+    "eval_games": 4,
+    "eval_interval": 1,
+    "eval_latest_only": true,
+    "eval_simulations": 8,
+    "final_games": 8,
+    "games": 8,
+    "hidden": 128,
+    "iterations": 4,
+    "max_active_games": 8,
+    "model_type": "line_mlp",
+    "name": "smoke_4d_4x4x4x4_line_mlp",
+    "replay_capacity": 20000,
+    "series_games": 4,
+    "shape": [
+      4,
+      4,
+      4,
+      4
+    ],
+    "simulations": 8,
+    "steps": 16,
+    "symmetry_augmentation": "random"
+  }
+]

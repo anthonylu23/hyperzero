@@ -112,6 +112,24 @@ def test_run_puct_can_prefer_immediate_win_over_uniform_evaluator() -> None:
     assert result.action == 0
 
 
+def test_run_puct_root_guard_blocks_immediate_loss() -> None:
+    config = GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0)
+    state = GameState.new(config)
+    for action in [1, 0, 2, 0]:
+        state.make_move(action)
+    evaluator = FixedEvaluator(np.array([-10.0, 10.0, 9.0]))
+
+    result = run_puct(
+        state,
+        evaluator,
+        PUCTConfig(simulations=2, c_puct=1.5),
+        rng=np.random.default_rng(0),
+    )
+
+    assert result.action == 0
+    np.testing.assert_allclose(result.policy, np.array([1.0, 0.0, 0.0]))
+
+
 def test_alphazero_agent_records_last_result() -> None:
     config = GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0)
     state = GameState.new(config)

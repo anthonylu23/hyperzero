@@ -34,7 +34,7 @@ class PolicyValueLineMLP(nn.Module):
         for line_index, line in enumerate(lines):
             line_cell[line_index, line] = 1.0
         weights = torch.as_tensor(
-            [float(10**count) for count in range(config.connect_k + 1)],
+            [0.0, *[float(10**count) for count in range(1, config.connect_k + 1)]],
             dtype=torch.float32,
         )
         self.register_buffer("lines", lines, persistent=False)

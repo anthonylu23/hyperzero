@@ -54,6 +54,18 @@ Stretch success target:
 
 > The system runs on 4D 4x4x4x4 Connect-4 and produces useful analysis, even if full mastery is out of reach.
 
+Current status:
+
+- The 3D target has been met for 4x4x4 Connect-4: the guarded line-ResNet
+  checkpoint beats random, tactical, heuristic, and MCTS-32 baselines under
+  fixed final-eval budgets.
+- The 4D stretch target has produced a clear result: the system runs and learns
+  stably in 4D, but current specialist agents remain weak against tactical and
+  heuristic threat/fork play.
+- The next research extension is a universal agent: one shared checkpoint that
+  can play selected 2D, 3D, and 4D Connect-K variants. This tests whether
+  tactical concepts learned in cheaper dimensions can transfer into 4D.
+
 ## Expected Contributions
 
 - A configurable N-dimensional Connect-K environment.

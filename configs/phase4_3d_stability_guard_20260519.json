@@ -1,0 +1,31 @@
+[
+  {
+    "batch": 512,
+    "blocks": 3,
+    "checkpoint_keep_last": 5,
+    "connect_k": 4,
+    "estimate_minutes": 140,
+    "eval_checkpoint_stride": 10,
+    "eval_games": 24,
+    "eval_interval": 5,
+    "eval_max_checkpoints": 6,
+    "eval_simulations": 32,
+    "final_games": 160,
+    "games": 48,
+    "hidden": 128,
+    "iterations": 120,
+    "max_active_games": 48,
+    "model_type": "line_resnet",
+    "name": "stable_3d_4x4x4_line_resnet_guard",
+    "replay_capacity": 200000,
+    "series_games": 24,
+    "shape": [
+      4,
+      4,
+      4
+    ],
+    "simulations": 64,
+    "steps": 96,
+    "symmetry_augmentation": "random"
+  }
+]

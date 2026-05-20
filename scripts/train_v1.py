@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -53,6 +54,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-simulations", type=int, default=8)
     parser.add_argument("--eval-mcts-simulations", type=int, default=32)
     parser.add_argument("--eval-interval", type=int, default=1)
+    parser.add_argument(
+        "--eval-score-weights",
+        type=json.loads,
+        default=None,
+        help=(
+            "JSON object mapping eval opponent names to score weights for "
+            "best checkpoint selection."
+        ),
+    )
     parser.add_argument("--batched-self-play", action="store_true")
     parser.add_argument("--max-active-self-play-games", type=int, default=None)
     return parser.parse_args()
@@ -90,6 +100,7 @@ def main() -> None:
             eval_simulations=args.eval_simulations,
             eval_mcts_simulations=args.eval_mcts_simulations,
             eval_interval=args.eval_interval,
+            eval_score_weights=args.eval_score_weights,
             batched_self_play=args.batched_self_play,
             max_active_self_play_games=args.max_active_self_play_games,
         )

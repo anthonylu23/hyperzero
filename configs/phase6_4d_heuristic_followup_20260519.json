@@ -1,0 +1,40 @@
+[
+  {
+    "batch": 256,
+    "blocks": 3,
+    "checkpoint_keep_last": 5,
+    "connect_k": 4,
+    "estimate_minutes": 140,
+    "eval_checkpoint_stride": 3,
+    "eval_games": 12,
+    "eval_interval": 3,
+    "eval_max_checkpoints": 8,
+    "eval_simulations": 24,
+    "final_games": 32,
+    "games": 16,
+    "hidden": 192,
+    "iterations": 24,
+    "learning_rate": 0.0005,
+    "max_active_games": 16,
+    "model_type": "line_mlp",
+    "name": "followup_4d_4x4x4x4_line_mlp_heuristic",
+    "replay_capacity": 200000,
+    "resume_from_checkpoint": "/tmp/hyperzero-gpu-runs-phase6-4d-training-20260519-151442/target_4d_4x4x4x4_line_mlp/train/best_by_eval_score.pt",
+    "series_games": 12,
+    "shape": [
+      4,
+      4,
+      4,
+      4
+    ],
+    "simulations": 24,
+    "steps": 32,
+    "symmetry_augmentation": "random",
+    "trace_loss_opponents": [
+      "heuristic",
+      "tactical"
+    ],
+    "trace_max_games": 8,
+    "trace_top_actions": 5
+  }
+]

@@ -117,6 +117,45 @@ The second serious architecture should be a transformer over board cells:
 
 Graph neural networks are a stretch architecture if time permits.
 
+### Universal Multi-Dimensional Model
+
+The next architecture phase is a single shared agent for 2D, 3D, and 4D
+Connect-K. The current specialist checkpoints assume a fixed board shape and
+fixed action count, so they cannot directly share one policy head across
+dimensions. A universal model should treat board cells and legal actions as
+sets of tokens with geometry metadata.
+
+Recommended representation:
+
+```text
+cell token:
+  canonical occupancy
+  normalized coordinate padded to max supported dimension
+  valid-coordinate mask
+  gravity-axis indicator
+  connect-k embedding
+  board-shape embedding
+
+action token:
+  column/action coordinate
+  legal-action bit
+  resulting cell coordinate if played
+```
+
+Recommended model shape:
+
+- shared cell/action encoder for all dimensions
+- coordinate-conditioned transformer or line-incidence attention block
+- value head pools cell tokens
+- policy head scores action tokens independently, then masks illegal actions
+- optional line-feature side channel reusing the line-aware 3D/4D findings
+
+This avoids a dimension-specific final linear layer and lets one checkpoint
+score a 7-action 2D Connect Four board, a 16-action 3D board, and a 64-action
+4D board. The eval API should load the checkpoint once, pass the requested
+`GameConfig`, and require the model to produce logits matching that config's
+action count.
+
 ## Training Loop
 
 The v1 training loop implements the smallest useful AlphaZero-style cycle:
@@ -133,6 +172,11 @@ the current promotion signal. The default search API remains simple and
 single-state, but v1 training can optionally use batched self-play: many active
 games select PUCT leaves independently, then their leaf states are evaluated in
 one batched model call.
+
+For the universal-agent phase, replay entries must include their `GameConfig`.
+Training batches should be mixed by curriculum weights rather than raw sample
+availability; otherwise cheap 2D games will dominate the replay distribution.
+Metrics should be reported both globally and per variant.
 
 Training losses:
 
@@ -155,6 +199,14 @@ Important outputs:
 - Elo rating across checkpoints
 - matchup matrix
 
+Universal-agent evaluation adds per-dimension gates:
+
+- 2D validation win rates
+- 3D promoted-target win rates
+- 4D tactical/heuristic stress win rates
+- aggregate score with per-dimension floors, so 2D/3D strength cannot mask 4D
+  weakness
+
 ## Experiment Tracking
 
 Use TensorBoard or Weights & Biases. Track at minimum:
@@ -175,3 +227,4 @@ Use TensorBoard or Weights & Biases. Track at minimum:
 4. 3D training result.
 5. Architecture experiments.
 6. 4D stretch.
+7. Universal 2D/3D/4D agent.

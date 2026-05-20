@@ -413,6 +413,10 @@ def train_v1(
             )
         checkpoint_time_seconds = time.perf_counter() - checkpoint_start
         metric = _replace_metric_checkpoint_time(metric, checkpoint_time_seconds)
+        if saved_checkpoint_path is not None:
+            _sync_checkpoint_metric(saved_checkpoint_path, metric)
+            if is_best_checkpoint and best_checkpoint_path is not None:
+                _sync_checkpoint_metric(best_checkpoint_path, metric)
         metrics.append(metric)
         _append_metrics_jsonl(config, metric)
 
@@ -677,6 +681,17 @@ def _copy_best_checkpoint(checkpoint_path: str) -> str:
     target = source.parent / "best_by_eval_score.pt"
     shutil.copy2(source, target)
     return str(target)
+
+
+def _sync_checkpoint_metric(checkpoint_path: str, metric: TrainingMetrics) -> None:
+    path = Path(checkpoint_path)
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    metric_payload = asdict(metric)
+    metrics = list(payload.get("metrics", []))
+    if metrics:
+        metrics[-1] = metric_payload
+        payload["metrics"] = metrics
+    torch.save(payload, path)
 
 
 def _prune_checkpoints(checkpoint_dir: Path, *, keep_last: int | None) -> None:

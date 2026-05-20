@@ -83,6 +83,7 @@ class PUCTConfig:
 
     simulations: int = 50
     c_puct: float = 1.5
+    root_tactical_guard: bool = True
 
     def __post_init__(self) -> None:
         if self.simulations <= 0:
@@ -202,7 +203,9 @@ class PUCTSearchSession:
 
         legal_mask = self.state.legal_mask()
         policy = normalize_legal_policy(visits, legal_mask)
-        action = _select_root_action(visits, values, legal_mask, self.rng)
+        if self.config.root_tactical_guard:
+            policy = _apply_root_tactical_guard(self.state, policy)
+        action = _select_root_action(policy, values, legal_mask, self.rng)
         return PUCTResult(action=action, policy=policy, visits=visits, root=self.root)
 
 
@@ -267,16 +270,59 @@ def _backup(path: list[PUCTNode], value: float, value_player: int) -> None:
             node.value_sum -= value
 
 
+def _apply_root_tactical_guard(state: GameState, policy: np.ndarray) -> np.ndarray:
+    """Force root policy to take wins and avoid one-ply losses when possible."""
+    legal_mask = state.legal_mask()
+    winning_mask = np.zeros_like(legal_mask, dtype=bool)
+    safe_mask = np.zeros_like(legal_mask, dtype=bool)
+    for action in np.flatnonzero(legal_mask):
+        action = int(action)
+        if _action_wins(state, action, state.player_to_move):
+            winning_mask[action] = True
+        elif not _opponent_has_immediate_win_after(state, action):
+            safe_mask[action] = True
+
+    if winning_mask.any():
+        return normalize_legal_policy(winning_mask.astype(np.float64), winning_mask)
+    if not safe_mask.any():
+        return policy
+
+    guarded = np.where(safe_mask, policy, 0.0)
+    if guarded.sum() > 0.0:
+        return guarded / guarded.sum()
+    return normalize_legal_policy(safe_mask.astype(np.float64), safe_mask)
+
+
+def _action_wins(state: GameState, action: int, player: int) -> bool:
+    state.make_move(action)
+    try:
+        return state.terminal and state.winner == player
+    finally:
+        state.undo_move()
+
+
+def _opponent_has_immediate_win_after(state: GameState, action: int) -> bool:
+    player = state.player_to_move
+    state.make_move(action)
+    try:
+        for response in state.legal_actions():
+            if _action_wins(state, int(response), -player):
+                return True
+        return False
+    finally:
+        state.undo_move()
+
+
 def _select_root_action(
-    visits: np.ndarray,
+    policy: np.ndarray,
     values: np.ndarray,
     legal_mask: np.ndarray,
     rng: np.random.Generator,
 ) -> int:
     legal_actions = np.flatnonzero(legal_mask)
-    legal_visits = visits[legal_actions]
-    max_visits = legal_visits.max()
-    candidates = legal_actions[legal_visits == max_visits]
+    legal_policy = policy[legal_actions]
+    max_probability = legal_policy.max()
+    candidates = legal_actions[legal_policy == max_probability]
     if candidates.size == 1:
         return int(candidates[0])
 

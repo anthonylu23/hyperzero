@@ -9,6 +9,15 @@ Play against a baseline agent:
     python3 scripts/connect4_terminal.py --opponent heuristic
     python3 scripts/connect4_terminal.py --opponent mcts --human-player O
 
+Play against a trained neural checkpoint:
+
+    python3 scripts/connect4_terminal.py
+        --opponent neural
+        --checkpoint-dir /tmp/hyperzero-v1-full
+    python3 scripts/connect4_terminal.py
+        --opponent neural
+        --checkpoint /tmp/hyperzero-v1-full/best_by_eval_score.pt
+
 Watch two agents play:
 
     python3 scripts/connect4_terminal.py --x-agent heuristic --o-agent random
@@ -32,6 +41,7 @@ from hyperzero.agents import (
     TacticalAgent,
 )
 from hyperzero.game import GameConfig, GameState, InvalidActionError
+from hyperzero.training import LoadedCheckpoint, build_checkpoint_agent
 
 
 PLAYER_MARKS = {
@@ -40,7 +50,8 @@ PLAYER_MARKS = {
     -1: "O",
 }
 
-AGENT_CHOICES = ("none", "random", "tactical", "heuristic", "mcts")
+AGENT_CHOICES = ("none", "random", "tactical", "heuristic", "mcts", "neural")
+DEFAULT_CONFIG = GameConfig(shape=(6, 7), connect_k=4, gravity_axis=0)
 
 
 def render_board(state: GameState) -> None:
@@ -94,24 +105,64 @@ def build_agent(
     *,
     seed: int,
     simulations: int,
+    neural_simulations: int,
+    c_puct: float,
+    checkpoint_path: Path | None,
+    device: str,
     player_mark: str,
-) -> Agent | None:
+) -> tuple[Agent | None, LoadedCheckpoint | None]:
     """Create the requested baseline agent."""
     if name == "none":
-        return None
+        return None, None
     if name == "random":
-        return RandomAgent(seed=seed, name=f"{player_mark}-random")
+        return RandomAgent(seed=seed, name=f"{player_mark}-random"), None
     if name == "tactical":
-        return TacticalAgent(seed=seed, name=f"{player_mark}-tactical")
+        return TacticalAgent(seed=seed, name=f"{player_mark}-tactical"), None
     if name == "heuristic":
-        return HeuristicAgent(seed=seed, name=f"{player_mark}-heuristic")
+        return HeuristicAgent(seed=seed, name=f"{player_mark}-heuristic"), None
     if name == "mcts":
-        return MCTSAgent(
-            simulations=simulations,
-            seed=seed,
-            name=f"{player_mark}-mcts",
+        return (
+            MCTSAgent(
+                simulations=simulations,
+                seed=seed,
+                name=f"{player_mark}-mcts",
+            ),
+            None,
         )
+    if name == "neural":
+        if checkpoint_path is None:
+            raise ValueError("--checkpoint or --checkpoint-dir is required for neural")
+        agent, checkpoint = build_checkpoint_agent(
+            checkpoint_path,
+            simulations=neural_simulations,
+            c_puct=c_puct,
+            device=device,
+            seed=seed,
+            name=f"{player_mark}-neural-{checkpoint_path.stem}",
+        )
+        return agent, checkpoint
     raise ValueError(f"unknown agent: {name}")
+
+
+def resolve_checkpoint_path(
+    checkpoint: Path | None,
+    checkpoint_dir: Path | None,
+) -> Path | None:
+    """Resolve an explicit checkpoint or a directory's best checkpoint."""
+    if checkpoint is not None and checkpoint_dir is not None:
+        raise ValueError("use either --checkpoint or --checkpoint-dir, not both")
+    if checkpoint is None and checkpoint_dir is None:
+        return None
+
+    path = checkpoint if checkpoint is not None else checkpoint_dir
+    assert path is not None
+    if path.is_dir():
+        path = path / "best_by_eval_score.pt"
+    if not path.exists():
+        raise FileNotFoundError(f"checkpoint does not exist: {path}")
+    if path.suffix != ".pt":
+        raise ValueError(f"checkpoint must be a .pt file: {path}")
+    return path
 
 
 def player_from_mark(mark: str) -> int:
@@ -143,7 +194,7 @@ def parse_args() -> argparse.Namespace:
         "--opponent",
         choices=AGENT_CHOICES,
         default="none",
-        help="Baseline agent to play against. Default keeps two-human mode.",
+        help="Agent to play against. Default keeps two-human mode.",
     )
     parser.add_argument(
         "--human-player",
@@ -177,15 +228,49 @@ def parse_args() -> argparse.Namespace:
         help="Optional RNG seed for the O agent.",
     )
     parser.add_argument("--mcts-simulations", type=int, default=100)
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help=(
+            "Neural checkpoint .pt file, or a directory containing "
+            "best_by_eval_score.pt."
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=None,
+        help="Directory containing best_by_eval_score.pt for neural play.",
+    )
+    parser.add_argument(
+        "--neural-simulations",
+        type=int,
+        default=32,
+        help="PUCT simulations per neural move.",
+    )
+    parser.add_argument("--c-puct", type=float, default=1.5)
+    parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
     if args.opponent != "none" and (
         args.x_agent != "none" or args.o_agent != "none"
     ):
         parser.error("use either --opponent or --x-agent/--o-agent, not both")
+    if args.neural_simulations <= 0:
+        parser.error("--neural-simulations must be positive")
+    try:
+        args.resolved_checkpoint = resolve_checkpoint_path(
+            args.checkpoint,
+            args.checkpoint_dir,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        parser.error(str(exc))
     return args
 
 
-def configure_agents(args: argparse.Namespace) -> dict[int, Agent]:
+def configure_agents(
+    args: argparse.Namespace,
+) -> tuple[dict[int, Agent], GameConfig]:
     """Build the configured X/O agent mapping."""
     x_agent_name = args.x_agent
     o_agent_name = args.o_agent
@@ -198,16 +283,24 @@ def configure_agents(args: argparse.Namespace) -> dict[int, Agent]:
             x_agent_name = args.opponent
 
     agents: dict[int, Agent] = {}
-    x_agent = build_agent(
+    x_agent, x_checkpoint = build_agent(
         x_agent_name,
         seed=args.seed if args.x_seed is None else args.x_seed,
         simulations=args.mcts_simulations,
+        neural_simulations=args.neural_simulations,
+        c_puct=args.c_puct,
+        checkpoint_path=args.resolved_checkpoint,
+        device=args.device,
         player_mark="X",
     )
-    o_agent = build_agent(
+    o_agent, o_checkpoint = build_agent(
         o_agent_name,
         seed=args.seed + 1 if args.o_seed is None else args.o_seed,
         simulations=args.mcts_simulations,
+        neural_simulations=args.neural_simulations,
+        c_puct=args.c_puct,
+        checkpoint_path=args.resolved_checkpoint,
+        device=args.device,
         player_mark="O",
     )
     if x_agent is not None:
@@ -216,7 +309,24 @@ def configure_agents(args: argparse.Namespace) -> dict[int, Agent]:
         agents[-1] = o_agent
     for agent in agents.values():
         agent.reset()
-    return agents
+
+    checkpoints = [
+        checkpoint for checkpoint in (x_checkpoint, o_checkpoint) if checkpoint
+    ]
+    config = DEFAULT_CONFIG
+    if checkpoints:
+        config = checkpoints[0].game_config
+        if len(config.shape) != 2:
+            raise ValueError(
+                "the terminal demo can only render 2D checkpoints; "
+                f"loaded checkpoint has shape={config.shape}"
+            )
+        if any(
+            checkpoint.game_config.to_dict() != config.to_dict()
+            for checkpoint in checkpoints
+        ):
+            raise ValueError("all neural agents must use the same game config")
+    return agents, config
 
 
 def describe_players(agents: dict[int, Agent]) -> None:
@@ -233,11 +343,19 @@ def describe_players(agents: dict[int, Agent]) -> None:
 
 def main() -> None:
     args = parse_args()
-    config = GameConfig(shape=(6, 7), connect_k=4, gravity_axis=0)
+    try:
+        agents, config = configure_agents(args)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+
     state = GameState.new(config, use_line_counts=True)
-    agents = configure_agents(args)
 
     print("HyperZero Connect Four terminal demo")
+    print(
+        "Board: "
+        f"shape={config.shape}, connect_k={config.connect_k}, "
+        f"gravity_axis={config.gravity_axis}"
+    )
     describe_players(agents)
 
     while not state.terminal:

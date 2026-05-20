@@ -3,6 +3,7 @@ import torch
 
 from hyperzero.game import GameConfig, GameState
 from hyperzero.models import NeuralEvaluator, PolicyValueMLP, build_policy_value_model
+from hyperzero.models.line_mlp import PolicyValueLineMLP
 
 
 def test_policy_value_mlp_matches_configured_shapes() -> None:
@@ -51,6 +52,16 @@ def test_policy_value_model_variants_match_configured_shapes() -> None:
 
         assert policy_logits.shape == (2, config.num_actions)
         assert value.shape == (2,)
+
+
+def test_line_mlp_empty_board_line_features_are_zero() -> None:
+    config = GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0)
+    model = PolicyValueLineMLP.from_config(config, hidden_size=16, residual_blocks=0)
+    board = torch.zeros((1, config.num_cells))
+
+    features = model._features(board)
+
+    assert torch.all(features == 0.0)
 
 
 def test_neural_evaluator_returns_single_state_numpy_outputs() -> None:

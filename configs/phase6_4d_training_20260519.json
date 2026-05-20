@@ -1,0 +1,32 @@
+[
+  {
+    "batch": 256,
+    "blocks": 3,
+    "checkpoint_keep_last": 5,
+    "connect_k": 4,
+    "estimate_minutes": 90,
+    "eval_checkpoint_stride": 3,
+    "eval_games": 8,
+    "eval_interval": 3,
+    "eval_max_checkpoints": 6,
+    "eval_simulations": 16,
+    "final_games": 24,
+    "games": 12,
+    "hidden": 192,
+    "iterations": 12,
+    "max_active_games": 12,
+    "model_type": "line_mlp",
+    "name": "target_4d_4x4x4x4_line_mlp",
+    "replay_capacity": 200000,
+    "series_games": 8,
+    "shape": [
+      4,
+      4,
+      4,
+      4
+    ],
+    "simulations": 16,
+    "steps": 32,
+    "symmetry_augmentation": "random"
+  }
+]

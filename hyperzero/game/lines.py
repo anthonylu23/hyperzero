@@ -37,6 +37,7 @@ def generate_winning_lines(shape: Iterable[int], connect_k: int) -> np.ndarray:
 
     dimensions = len(shape_tuple)
     lines: list[tuple[int, ...]] = []
+    seen: set[tuple[int, ...]] = set()
 
     for direction in generate_directions(dimensions):
         ranges = []
@@ -60,7 +61,10 @@ def generate_winning_lines(shape: Iterable[int], connect_k: int) -> np.ndarray:
                     for axis in range(dimensions)
                 )
                 cells.append(int(np.ravel_multi_index(coord, shape_tuple)))
-            lines.append(tuple(cells))
+            line = tuple(cells)
+            if line not in seen:
+                seen.add(line)
+                lines.append(line)
 
     if not lines:
         return np.empty((0, connect_k), dtype=np.int32)

@@ -171,6 +171,11 @@ def test_train_v1_runs_one_iteration_and_writes_checkpoint(tmp_path) -> None:
     assert checkpoint.iteration == 1
     assert checkpoint.game_config.shape == config.shape
     assert checkpoint.training_config["model_type"] == "line_mlp"
+    assert (
+        checkpoint.raw["metrics"][-1]["checkpoint_time_seconds"]
+        == metric.checkpoint_time_seconds
+    )
+    assert checkpoint.raw["metrics"][-1]["checkpoint_time_seconds"] > 0.0
 
 
 def test_train_v1_runs_batched_self_play(tmp_path) -> None:

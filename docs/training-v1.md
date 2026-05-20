@@ -17,7 +17,7 @@ python3 -m pytest -q
 Current known-good result:
 
 ```text
-64 passed
+71 passed
 ```
 
 ## Current Progress
@@ -52,6 +52,9 @@ Implemented:
   threats
 - GPU experiment runner with benchmark, train, eval-series, final eval, GPU
   snapshots, and explicit co-scheduling via `--allow-existing-compute`
+- GPU telemetry monitor (`gpu-monitor.csv`) for long experiment runs
+- weighted eval score selection from the training CLI and GPU runner
+- terminal demo support for playing against 2D neural checkpoints
 
 Validation so far:
 
@@ -82,6 +85,13 @@ Validation so far:
   masking, eval, and batching logic. The actionable hardening item was applied:
   PUCT backup now uses the copied simulation state's actual `player_to_move`,
   and training validates policy targets.
+- 3D 4x4x4 Connect-4 is now stable with the guarded line-ResNet run:
+  `100.0%` vs random, `97.5%` vs tactical, `94.4%` vs heuristic, and `99.4%`
+  vs MCTS-32 over 160 final-eval games per opponent.
+- 4D 4x4x4x4 Connect-4 is feasible and runs stably, but current specialist
+  checkpoints remain weak against tactical/heuristic opponents. The best
+  completed continuation final eval reached `100.0%` vs random, `43.8%` vs
+  tactical, `25.0%` vs heuristic, and `96.9%` vs MCTS-32.
 
 ## May 19 GPU Experiment Block
 
@@ -127,6 +137,23 @@ Main takeaways:
   first run to beat heuristic decisively.
 - Longer training fixed the 5x5x5 ResNet heuristic gap: 50 rows scored 0%
   against heuristic, while 100 rows reached 63.1%.
+
+## May 19 3D Stability and 4D Stretch Block
+
+The follow-up stability block is documented in
+[experiments.md](experiments.md#3d-stability-and-4d-initial-runs---2026-05-19).
+Key training-stack implications:
+
+- The root tactical guard should stay enabled by default. It forces immediate
+  wins and masks one-ply losing root moves when safe alternatives exist.
+- 3D 4x4x4 Connect-4 is no longer just a smoke target; it has a promoted
+  stable checkpoint family.
+- 4D does not fail because of CUDA memory, thermal limits, or divergent losses.
+  It fails strategically: the current policy/search combination still walks
+  into fork/threat structures against heuristic and tactical baselines.
+- The next model/training step is not another fixed-shape specialist by default.
+  The new roadmap phase is a universal dimension-conditioned agent that can
+  play selected 2D, 3D, and 4D Connect-K variants from one checkpoint.
 
 ## Training Smoke Run
 
@@ -285,35 +312,38 @@ conda run -n torch python scripts/train_v1.py \
   --checkpoint-dir /tmp/hyperzero-v1-checkpoints
 ```
 
-## Next Full V1 Run
+## Current V1 Run Path
 
-The first larger 2D and 3D v1 experiment block is complete, and the run-risk
-items needed before the next 3D target experiment are now implemented:
+The earlier 2D and 3D v1 experiment blocks are complete. The current specialist
+track is the 4D tactical-weighted continuation; universal-agent work is tracked
+separately and should start only after the specialist run artifacts are clean.
+The runner now enforces or records the main operational guardrails:
 
 - Resumable checkpoints include replay and RNG state.
 - Eval-series can be downsampled explicitly.
 - Loss traces can be exported for heuristic failures.
 - `line_resnet` adds open-line feature planes to the ResNet input.
-- `configs/phase3_3d_target_ready.json` defines the next target manifest.
+- Final evals can cover both latest and weighted-best checkpoints.
+- Experiment summaries include seed and git state.
+- Resume and previous-best checkpoint paths are checked before GPU wait.
 
-Recommended target command:
+Recommended current 4D continuation command:
 
 ```bash
 ssh anthonylu@anthonypc
 cd /tmp/hyperzero-codex
 conda run -n torch python -u scripts/run_gpu_experiments.py \
-  --run-root /tmp/hyperzero-gpu-runs-phase3-3d-target \
+  --run-root /tmp/hyperzero-gpu-runs-phase6-4d-tactical-weighted \
   --cutoff 09:30 \
   --device cuda \
-  --config-json configs/phase3_3d_target_ready.json \
+  --config-json configs/phase6_4d_tactical_weighted_20260519.json \
   --allow-existing-compute \
   --min-gpu-free-mb 1000 \
   --max-gpu-utilization 100
 ```
 
-The target manifest compares `5x5x5 K=4 line_resnet` against a longer ResNet
-baseline. The goal is to beat the previous best 5x5x5 ResNet heuristic result
-of 63.1% while preserving high tactical and MCTS-32 results.
+The old `configs/phase3_3d_target_ready.json` target is historical. Keep it only
+for result comparison and reproducibility checks.
 
 The older 2D validation command remains below for reference.
 

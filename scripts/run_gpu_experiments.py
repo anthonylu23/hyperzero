@@ -216,6 +216,17 @@ def capture(cmd: list[str]) -> str:
     ).stdout
 
 
+def git_metadata() -> dict[str, Any]:
+    """Return lightweight git provenance for experiment summaries."""
+    commit = capture(["git", "rev-parse", "HEAD"]).strip()
+    status = capture(["git", "status", "--short"]).splitlines()
+    return {
+        "commit": commit or None,
+        "dirty": bool(status),
+        "status_short": status,
+    }
+
+
 def snapshot(path: Path) -> None:
     text = [
         f"timestamp={now()}\n",
@@ -240,6 +251,40 @@ def snapshot(path: Path) -> None:
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(text), encoding="utf-8")
+
+
+def start_gpu_monitor(path: Path) -> tuple[subprocess.Popen[str], Any]:
+    """Start a low-frequency GPU telemetry sampler."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.with_suffix(".meta.txt").write_text(
+        f"started_at={now()}\n",
+        encoding="utf-8",
+    )
+    log = path.open("w", encoding="utf-8")
+    proc = subprocess.Popen(
+        [
+            "nvidia-smi",
+            "--query-gpu=timestamp,index,name,memory.used,memory.free,"
+            "utilization.gpu,utilization.memory,temperature.gpu,power.draw",
+            "--format=csv,nounits",
+            "--loop=15",
+        ],
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    return proc, log
+
+
+def stop_gpu_monitor(proc: subprocess.Popen[str], log: Any) -> None:
+    """Stop a GPU telemetry sampler started by start_gpu_monitor."""
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    log.close()
 
 
 def gpu_free(
@@ -312,6 +357,27 @@ def latest_checkpoint(path: Path) -> Path | None:
     return checkpoints[-1] if checkpoints else None
 
 
+def final_checkpoint_targets(
+    train_dir: Path,
+    *,
+    selection: str = "latest_and_best",
+) -> dict[str, Path]:
+    """Return final-eval checkpoint targets by label."""
+    if selection not in ("latest", "best", "latest_and_best"):
+        raise ValueError(
+            "final_eval_checkpoints must be 'latest', 'best', or 'latest_and_best'"
+        )
+
+    targets: dict[str, Path] = {}
+    latest = latest_checkpoint(train_dir)
+    best = train_dir / "best_by_eval_score.pt"
+    if selection in ("latest", "latest_and_best") and latest is not None:
+        targets["latest"] = latest
+    if selection in ("best", "latest_and_best") and best.exists():
+        targets["best"] = best
+    return targets
+
+
 def shape_args(shape: list[int]) -> list[str]:
     return [str(item) for item in shape]
 
@@ -366,6 +432,10 @@ def train_command(
         str(config.get("model_type", "mlp")),
         "--symmetry-augmentation",
         str(config.get("symmetry_augmentation", "none")),
+        "--learning-rate",
+        str(config.get("learning_rate", 1e-3)),
+        "--seed",
+        str(config.get("seed", 0)),
         "--device",
         device,
         "--batched-self-play",
@@ -384,6 +454,14 @@ def train_command(
         "--checkpoint-dir",
         str(out_dir),
     ]
+    eval_score_weights = config.get("eval_score_weights")
+    if eval_score_weights is not None:
+        command.extend(
+            [
+                "--eval-score-weights",
+                json.dumps(eval_score_weights, sort_keys=True),
+            ]
+        )
     checkpoint_keep_last = config.get("checkpoint_keep_last")
     if checkpoint_keep_last is not None:
         command.extend(["--checkpoint-keep-last", str(checkpoint_keep_last)])
@@ -403,8 +481,10 @@ def summarize_config(
     benchmark_metrics = load_jsonl(config_dir / "benchmark" / "metrics.jsonl")
     eval_series = load_jsonl(config_dir / "eval-series.jsonl")
     final_evals: dict[str, Any] = {}
-    for path in sorted((config_dir / "final-evals").glob("*.json")):
-        final_evals[path.stem] = json.loads(path.read_text(encoding="utf-8"))
+    final_eval_dir = config_dir / "final-evals"
+    for path in sorted(final_eval_dir.glob("**/*.json")):
+        key = path.relative_to(final_eval_dir).with_suffix("").as_posix()
+        final_evals[key] = json.loads(path.read_text(encoding="utf-8"))
 
     best_by_opponent: dict[str, Any] = {}
     for row in eval_series:
@@ -425,6 +505,8 @@ def summarize_config(
         "status": status,
         "shape": config["shape"],
         "connect_k": config["connect_k"],
+        "seed": int(config.get("seed", 0)),
+        "git": git_metadata(),
         "run_dir": str(config_dir),
         "benchmark_final_metric": benchmark_metrics[-1] if benchmark_metrics else None,
         "train_metrics_rows": len(metrics),
@@ -453,6 +535,29 @@ def eval_series_selection_args(config: dict[str, Any]) -> list[str]:
     return args
 
 
+def trace_loss_args(
+    config: dict[str, Any],
+    config_dir: Path,
+    opponent: str,
+    checkpoint_label: str = "latest",
+) -> list[str]:
+    """Return final-eval loss trace CLI args for configured opponents."""
+    trace_opponents = config.get("trace_loss_opponents", [])
+    if isinstance(trace_opponents, str):
+        trace_opponents = [trace_opponents]
+    if opponent not in trace_opponents:
+        return []
+    trace_dir = config_dir / "loss-traces" / checkpoint_label
+    return [
+        "--trace-losses-output",
+        str(trace_dir / f"{opponent}.json"),
+        "--trace-max-games",
+        str(config.get("trace_max_games", 8)),
+        "--trace-top-actions",
+        str(config.get("trace_top_actions", 5)),
+    ]
+
+
 def run_config(
     config: dict[str, Any],
     run_root: Path,
@@ -468,6 +573,13 @@ def run_config(
         json.dumps(config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    resume_from_checkpoint = config.get("resume_from_checkpoint")
+    if resume_from_checkpoint is not None and not Path(resume_from_checkpoint).exists():
+        return summarize_config(config, config_dir, "missing_resume_checkpoint")
+    previous_best = config.get("previous_best_checkpoint")
+    if previous_best is not None and not Path(previous_best).exists():
+        return summarize_config(config, config_dir, "missing_previous_best_checkpoint")
+
     if not wait_for_gpu(
         cutoff,
         min_gpu_free_mb,
@@ -477,102 +589,161 @@ def run_config(
         return {"name": config["name"], "status": "gpu_unavailable_before_cutoff"}
 
     snapshot(config_dir / "gpu-before.txt")
+    monitor_proc, monitor_log = start_gpu_monitor(config_dir / "gpu-monitor.csv")
     status = "started"
 
-    rc = run_logged(
-        train_command(config, config_dir / "benchmark", benchmark=True, device=device),
-        config_dir / "benchmark.log",
-    )
-    if rc != 0:
-        status = f"benchmark_failed_rc_{rc}"
-        snapshot(config_dir / "gpu-after.txt")
-        return summarize_config(config, config_dir, status)
-
-    rc = run_logged(
-        train_command(config, config_dir / "train", benchmark=False, device=device),
-        config_dir / "train.log",
-    )
-    if rc != 0:
-        status = f"train_failed_rc_{rc}"
-        snapshot(config_dir / "gpu-after.txt")
-        return summarize_config(config, config_dir, status)
-
-    final_checkpoint = latest_checkpoint(config_dir / "train")
-    if final_checkpoint is None:
-        status = "missing_checkpoint"
-        snapshot(config_dir / "gpu-after.txt")
-        return summarize_config(config, config_dir, status)
-
-    if datetime.now() < cutoff - timedelta(minutes=3):
+    try:
         rc = run_logged(
-            [
-                sys.executable,
-                "-u",
-                "scripts/evaluate_checkpoint_series.py",
-                "--checkpoint-dir",
-                str(config_dir / "train"),
-                "--opponents",
-                "random",
-                "tactical",
-                "heuristic",
-                "--games",
-                str(config["series_games"]),
-                "--simulations",
-                str(max(16, min(32, config["simulations"]))),
-                "--mcts-simulations",
-                "32",
-                "--device",
-                device,
-                "--jsonl-output",
-                str(config_dir / "eval-series.jsonl"),
-                *eval_series_selection_args(config),
-            ],
-            config_dir / "eval-series.log",
-            timeout=max(60.0, (cutoff - datetime.now()).total_seconds() - 120.0),
+            train_command(
+                config,
+                config_dir / "benchmark",
+                benchmark=True,
+                device=device,
+            ),
+            config_dir / "benchmark.log",
         )
         if rc != 0:
-            status = f"eval_series_failed_rc_{rc}"
-    else:
-        status = "skipped_eval_series_time_budget"
+            status = f"benchmark_failed_rc_{rc}"
+            return summarize_config(config, config_dir, status)
 
-    final_eval_dir = config_dir / "final-evals"
-    final_eval_dir.mkdir(exist_ok=True)
-    for opponent in ("random", "tactical", "heuristic", "mcts"):
-        if datetime.now() >= cutoff - timedelta(minutes=2):
-            if status == "started":
-                status = "partial_final_eval_time_budget"
-            break
         rc = run_logged(
-            [
-                sys.executable,
-                "-u",
-                "scripts/evaluate_checkpoint.py",
-                "--checkpoint",
-                str(final_checkpoint),
-                "--opponent",
-                opponent,
-                "--games",
-                str(config["final_games"]),
-                "--simulations",
-                str(max(16, min(32, config["simulations"]))),
-                "--mcts-simulations",
-                "32",
-                "--device",
-                device,
-                "--json-output",
-                str(final_eval_dir / f"{opponent}.json"),
-            ],
-            config_dir / f"final-eval-{opponent}.log",
-            timeout=max(60.0, (cutoff - datetime.now()).total_seconds() - 60.0),
+            train_command(config, config_dir / "train", benchmark=False, device=device),
+            config_dir / "train.log",
         )
         if rc != 0:
-            status = f"final_eval_{opponent}_failed_rc_{rc}"
-            break
+            status = f"train_failed_rc_{rc}"
+            return summarize_config(config, config_dir, status)
 
-    if status == "started":
-        status = "complete"
-    snapshot(config_dir / "gpu-after.txt")
-    return summarize_config(config, config_dir, status)
+        final_targets = final_checkpoint_targets(
+            config_dir / "train",
+            selection=str(config.get("final_eval_checkpoints", "latest_and_best")),
+        )
+        if not final_targets:
+            status = "missing_checkpoint"
+            return summarize_config(config, config_dir, status)
+
+        if datetime.now() < cutoff - timedelta(minutes=3):
+            rc = run_logged(
+                [
+                    sys.executable,
+                    "-u",
+                    "scripts/evaluate_checkpoint_series.py",
+                    "--checkpoint-dir",
+                    str(config_dir / "train"),
+                    "--opponents",
+                    "random",
+                    "tactical",
+                    "heuristic",
+                    "--games",
+                    str(config["series_games"]),
+                    "--simulations",
+                    str(max(16, min(32, config["simulations"]))),
+                    "--mcts-simulations",
+                    "32",
+                    "--device",
+                    device,
+                    "--jsonl-output",
+                    str(config_dir / "eval-series.jsonl"),
+                    *eval_series_selection_args(config),
+                ],
+                config_dir / "eval-series.log",
+                timeout=max(60.0, (cutoff - datetime.now()).total_seconds() - 120.0),
+            )
+            if rc != 0:
+                status = f"eval_series_failed_rc_{rc}"
+        else:
+            status = "skipped_eval_series_time_budget"
+
+        final_eval_dir = config_dir / "final-evals"
+        final_eval_dir.mkdir(exist_ok=True)
+        for checkpoint_label, checkpoint_path in final_targets.items():
+            checkpoint_eval_dir = final_eval_dir / checkpoint_label
+            checkpoint_eval_dir.mkdir(exist_ok=True)
+            for opponent in ("random", "tactical", "heuristic", "mcts"):
+                if datetime.now() >= cutoff - timedelta(minutes=2):
+                    if status == "started":
+                        status = "partial_final_eval_time_budget"
+                    break
+                rc = run_logged(
+                    [
+                        sys.executable,
+                        "-u",
+                        "scripts/evaluate_checkpoint.py",
+                        "--checkpoint",
+                        str(checkpoint_path),
+                        "--opponent",
+                        opponent,
+                        "--games",
+                        str(config["final_games"]),
+                        "--simulations",
+                        str(max(16, min(32, config["simulations"]))),
+                        "--mcts-simulations",
+                        "32",
+                        "--device",
+                        device,
+                        "--json-output",
+                        str(checkpoint_eval_dir / f"{opponent}.json"),
+                        *trace_loss_args(
+                            config,
+                            config_dir,
+                            opponent,
+                            checkpoint_label,
+                        ),
+                    ],
+                    config_dir / f"final-eval-{checkpoint_label}-{opponent}.log",
+                    timeout=max(60.0, (cutoff - datetime.now()).total_seconds() - 60.0),
+                )
+                if rc != 0:
+                    status = f"final_eval_{checkpoint_label}_{opponent}_failed_rc_{rc}"
+                    break
+            if (
+                status.startswith("final_eval_")
+                or status == "partial_final_eval_time_budget"
+            ):
+                break
+
+            previous_best = config.get("previous_best_checkpoint")
+            if (
+                previous_best is not None
+                and datetime.now() < cutoff - timedelta(minutes=2)
+            ):
+                rc = run_logged(
+                    [
+                        sys.executable,
+                        "-u",
+                        "scripts/evaluate_checkpoint.py",
+                        "--checkpoint",
+                        str(checkpoint_path),
+                        "--opponent",
+                        "checkpoint",
+                        "--opponent-checkpoint",
+                        str(previous_best),
+                        "--games",
+                        str(config["final_games"]),
+                        "--simulations",
+                        str(max(16, min(32, config["simulations"]))),
+                        "--opponent-simulations",
+                        str(max(16, min(32, config["simulations"]))),
+                        "--device",
+                        device,
+                        "--json-output",
+                        str(checkpoint_eval_dir / "previous-best.json"),
+                    ],
+                    config_dir / f"final-eval-{checkpoint_label}-previous-best.log",
+                    timeout=max(60.0, (cutoff - datetime.now()).total_seconds() - 60.0),
+                )
+                if rc != 0:
+                    status = (
+                        f"final_eval_{checkpoint_label}_previous_best_failed_rc_{rc}"
+                    )
+                    break
+
+        if status == "started":
+            status = "complete"
+        return summarize_config(config, config_dir, status)
+    finally:
+        stop_gpu_monitor(monitor_proc, monitor_log)
+        snapshot(config_dir / "gpu-after.txt")
 
 
 def main() -> None:

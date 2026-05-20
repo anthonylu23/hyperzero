@@ -29,6 +29,7 @@ benchmarks/
 scripts/
   evaluate_baselines.py  Baseline matchup runner
 docs/
+  status.md            Current project status and active run notes
   proposal.md          Research proposal and project framing
   roadmap.md           Milestones and implementation phases
   architecture.md      Planned system architecture
@@ -41,36 +42,39 @@ tests/
 
 ## Project Status
 
-Core game engine, baseline agents, pure MCTS search, and head-to-head
-evaluation are implemented with tests. The first v1 neural stack is also
-available: a small residual MLP, non-batched PUCT agent, self-play generation,
-batched self-play leaf inference, replay buffer, and basic training loop. This
-v1 loop is intended for correctness smoke tests and early debugging before
-larger training and evaluation runs. See [docs/training-v1.md](docs/training-v1.md)
-for train/eval commands.
+See [docs/status.md](docs/status.md) for the full current snapshot.
+
+Core game engine, baseline agents, pure MCTS search, head-to-head evaluation,
+PUCT search, neural agents, self-play training, checkpoint evaluation, and
+terminal play are implemented with tests. The training stack now supports
+batched self-play leaf inference, line-aware models, GPU experiment orchestration,
+loss traces, GPU telemetry, and custom eval score weights for best-checkpoint
+selection.
 
 Current validation:
 
-- Local lint and unit tests pass: `60 passed`.
+- Local lint and unit tests pass: `71 passed`.
 - Remote validation on `anthonypc` passes in the `torch` conda environment.
 - CUDA is available on `anthonypc` with an NVIDIA GeForce RTX 3060 Ti.
-- A remote CUDA smoke run completed with per-iteration losses, baseline evals,
-  checkpoints, `metrics.jsonl`, and checkpoint-series eval output.
-- A fuller 3x3 Connect-3 run completed for 50 iterations. It learned a stable
-  draw/win policy, reached `84%` vs random, `80%` vs tactical, `50%` wins plus
-  `50%` draws vs heuristic, and `10%` wins plus `90%` draws vs matched MCTS.
-- A larger 4x4 Connect-3 validation run completed for 30 iterations. The best
-  checkpoint reached `76%` vs heuristic and the final checkpoint reached `76%`
-  vs matched 32-simulation MCTS in checkpoint-series eval.
-- Batched self-play/inference is implemented as an optional training path.
-  Remote GPU comparison on 4x4 Connect-3 improved a small two-iteration run
-  from `6.13s` to `4.08s`; a small 3D smoke run completed successfully.
+- 3D 4x4x4 Connect-4 is promoted as stable. The guarded line-ResNet run reached
+  final evals of `100.0%` vs random, `97.5%` vs tactical, `94.4%` vs heuristic,
+  and `99.4%` vs MCTS-32 over 160 games per opponent.
+- 4D 4x4x4x4 Connect-4 is feasible but not solved. Smoke, initial training, and
+  a heuristic continuation completed with stable loss/resource behavior. The
+  current best readout is strong against random/MCTS but still weak against
+  tactical and heuristic opponents.
+- The active 4D tactical-weighted follow-up was paused on `anthonypc` so the
+  machine can be rebooted into Windows. It can be resumed from the stopped
+  process set or restarted from its latest checkpoint artifacts.
 
-Next experiment:
+Next experiments:
 
-Move to an initial 3D smoke experiment on 4x4x4 Connect-4 with conservative
-budgets. The v1 loop is now verified on small 2D games, but serious 3D training
-will likely need better exploration controls and higher self-play throughput.
+- Resume or restart the 4D tactical-weighted follow-up and evaluate whether
+  deeper search plus heuristic/tactical-weighted checkpoint selection improves
+  4D threat defense.
+- Start the new universal-agent phase: train a single dimension-conditioned
+  agent that can play 2D, 3D, and 4D Connect-K variants with one shared policy
+  and value model.
 
 ## Working Name
 

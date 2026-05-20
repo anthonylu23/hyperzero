@@ -12,11 +12,10 @@ Current status:
 - 4D 4x4x4x4 Connect-4 is feasible but tactically immature. Completed 4D runs
   show stable loss/resource behavior and strong random/MCTS performance, but
   weak tactical/heuristic performance.
-- A 4D tactical-weighted continuation exists but is currently paused on
-  `anthonypc` for a Windows reboot. It should be resumed or restarted from its
-  latest checkpoint artifacts before drawing conclusions from that phase.
-- The next major research phase is a universal agent: one shared checkpoint that
-  can play selected 2D, 3D, and 4D Connect-K variants.
+- The 4D tactical-weighted multi-seed follow-up completed. Seed 2 is the current
+  specialist 4D baseline, but results remain seed/checkpoint sensitive.
+- The active research phase is a universal agent: one shared checkpoint that can
+  play selected 2D, 3D, and 4D Connect-K variants.
 
 The experiments should distinguish between:
 
@@ -412,6 +411,191 @@ Key readout:
   random. Because training resume uses absolute iteration numbers, the config
   ends at iteration `39`, giving 18 additional iterations after the resumed
   iteration-21 checkpoint.
+
+## 4D Tactical-Weighted Fresh Seeds and Universal Early Run - 2026-05-20
+
+4D tactical-weighted fresh seeds:
+
+```text
+runs/phase6_4d_tactical_fresh_seed0_20260520-0938/
+runs/phase6_4d_tactical_fresh_seed1_20260520-0941/
+runs/phase6_4d_tactical_fresh_seed2_20260520-1015/
+runs/phase6_4d_tactical_fresh_seed3_20260520-1015/
+4x4x4x4 K=4 line_mlp, 39 iterations, 12 games/iteration,
+32 PUCT simulations, learning rate 2.5e-4, best checkpoint selected
+with 50% heuristic / 35% tactical / 15% random train-time eval score
+```
+
+Final evals used 40 games per opponent:
+
+```text
+Seed  Checkpoint  Random  Tactical  Heuristic  MCTS-32
+   0  best         100.0%     30.0%      20.0%    97.5%
+   0  latest       100.0%     40.0%      22.5%   100.0%
+   1  best         100.0%     47.5%      52.5%   100.0%
+   1  latest       100.0%     52.5%      12.5%   100.0%
+   2  best         100.0%     55.0%      55.0%   100.0%
+   2  latest       100.0%     57.5%      40.0%   100.0%
+   3  best         100.0%     17.5%      27.5%   100.0%
+   3  latest        97.5%     32.5%      25.0%    95.0%
+```
+
+Resource readout on `anthonypc`:
+
+- The first serial run showed low GPU utilization because 4D PUCT/search is
+  CPU-bound and uses CUDA in short batched-inference bursts.
+- Running four independent seeds in parallel raised the machine to roughly four
+  active CPU workers while keeping VRAM under about `1 GiB` and temperature near
+  the low `40s C`.
+- The seed-2 best checkpoint is the current specialist 4D baseline.
+
+Interpretation:
+
+- The tactical-weighted 32-simulation recipe improved 4D specialist strength
+  over the prior continuation (`43.8%` tactical / `25.0%` heuristic).
+- The result is still seed/checkpoint sensitive. Best-checkpoint selection is
+  important because latest checkpoints can preserve tactical strength while
+  regressing heuristic performance.
+- Additional specialist 4D runs should be targeted, not open-ended. The better
+  next step is to continue the universal-agent phase or add curriculum/eval
+  pressure for heuristic consistency.
+
+Universal early run:
+
+```text
+runs/universal_early_20260520-1150/
+2D 6x7 K=4, 2D 4x4 K=3, 3D 4x4x4 K=4, 4D 4x4x4x4 K=4
+UniversalPolicyValueTransformer, 36 iterations, 16 PUCT simulations,
+58 mixed self-play games/iteration, eval every 3 iterations
+```
+
+Best train-time eval was iteration 33:
+
+```text
+Variant         Random  Tactical  Heuristic
+2d_4x4_k3       100.0%     75.0%      50.0%
+2d_6x7_k4        87.5%     50.0%      50.0%
+3d_4x4x4_k4     100.0%     75.0%      25.0%
+4d_4x4x4x4_k4   100.0%    100.0%      37.5%
+```
+
+Key readout:
+
+- The universal checkpoint legally plays all configured 2D, 3D, and 4D
+  variants, and the shared model can learn nontrivial tactical behavior across
+  variants.
+- Aggregate score improved from `0.4512` at iteration 3 to `0.6055` at
+  iteration 33.
+- Heuristic consistency remains weak and noisy, especially on 2D 6x7 and 4D.
+  The next universal run should either extend the same checkpoint with stronger
+  heuristic/tactical eval weighting or adjust the curriculum to prevent easy
+  random/tactical gains from hiding heuristic failures.
+
+Universal curriculum v2 continuation:
+
+```text
+configs/universal_curriculum_v2_20260520.json
+runs/universal_curriculum_v2_20260520-1356/
+2D 6x7 K=4:        32 games/iteration
+2D 4x4 K=3:         8 games/iteration
+3D 4x4x4 K=4:      16 games/iteration
+4D 4x4x4x4 K=4:    12 games/iteration
+resumed from the universal early best checkpoint at iteration 33
+continued through iteration 40 with 16 PUCT simulations
+weighted eval: 45% heuristic / 35% tactical / 20% random
+```
+
+Resume validation now permits curriculum-count changes while keeping variant ids,
+order, shape, connect length, gravity axis, and model shape strict.
+
+Best v2 eval was the final iteration 40:
+
+```text
+Variant         Random  Tactical  Heuristic
+2d_4x4_k3        87.5%     87.5%      50.0%
+2d_6x7_k4       100.0%     62.5%       0.0%
+3d_4x4x4_k4     100.0%     50.0%      50.0%
+4d_4x4x4x4_k4   100.0%     50.0%      12.5%
+```
+
+Key readout:
+
+- V2 did not improve over the universal early best. Its best score was `0.4789`
+  versus the prior `0.6055`, and no checkpoint passed the configured floors.
+- The run lowered training loss from `2.6457` at iteration 34 to `2.5812` at
+  iteration 40, but lower self-play loss did not translate into stronger
+  external baseline performance.
+- The curriculum recovered some 3D heuristic behavior, but 2D 6x7 heuristic and
+  4D heuristic remained the major blockers.
+- Eval floors worked as intended: they prevented these weaker checkpoints from
+  replacing the prior best checkpoint.
+
+4D stronger-search probe:
+
+```text
+configs/phase6_4d_stronger_search_probe_20260520.json
+runs/phase6_4d_stronger_search_probe_20260520-1416/
+resumed seed-2 specialist best checkpoint at iteration 6
+48 PUCT simulations, 8 games/iteration, learning rate 1.25e-4
+```
+
+Train-time evals:
+
+```text
+Iteration  Random  Tactical  Heuristic  Eval score
+        7  100.0%     37.5%      75.0%       65.6%
+        8  100.0%     37.5%      37.5%       46.9%
+```
+
+Final eval of iteration-7 best used 16 games per opponent:
+
+```text
+Random     100.0%
+Tactical    43.8%
+Heuristic   56.2%
+```
+
+Interpretation:
+
+- Raising search to 48 simulations can improve 4D heuristic performance, but it
+  did not preserve tactical strength in this short continuation.
+- The original seed-2 specialist remains the current promoted 4D baseline because
+  it balanced tactical and heuristic better over larger 40-game evals.
+- The next 4D specialist experiment should target the tactical/heuristic tradeoff
+  directly rather than simply increasing search again.
+
+Universal curriculum v3 reduced 2D 6x7 exposure and shifted that budget toward
+3D:
+
+```text
+configs/universal_curriculum_v3_20260520.json
+runs/universal_curriculum_v3_20260520-1428/
+2D 6x7 K=4:        16 games/iteration
+2D 4x4 K=3:         8 games/iteration
+3D 4x4x4 K=4:      24 games/iteration
+4D 4x4x4x4 K=4:    12 games/iteration
+```
+
+Best v3 eval was iteration 34:
+
+```text
+Variant         Random  Tactical  Heuristic
+2d_4x4_k3        87.5%     75.0%      50.0%
+2d_6x7_k4        87.5%     50.0%      50.0%
+3d_4x4x4_k4      75.0%     62.5%      37.5%
+4d_4x4x4x4_k4   100.0%     87.5%      12.5%
+```
+
+Key readout:
+
+- V3 improved the best continuation score to `0.5609`, better than v2's `0.4789`
+  but still below the universal early best `0.6055`.
+- No v3 checkpoint passed floors. The main failures were still 4D heuristic and
+  random/heuristic instability on the smaller variants.
+- Reweighting alone helped 2D 6x7 heuristic at the best checkpoint, but did not
+  solve cross-variant heuristic consistency. The next universal experiment should
+  change search budget or add explicit hard-position/anti-fork pressure instead
+  of only changing game counts.
 
 ## Reproducibility Requirements
 

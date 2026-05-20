@@ -23,17 +23,20 @@ hyperzero/
   game/                Core N-dimensional Connect-K engine
   agents/              Random, tactical, heuristic, and pure-MCTS baselines
   search/              Reusable Monte Carlo Tree Search
+  universal/           Dimension-conditioned board/action encoding
   eval/                Head-to-head matchup evaluation
 benchmarks/
   benchmark_engine.py  Engine throughput smoke benchmark
 scripts/
   evaluate_baselines.py  Baseline matchup runner
+  train_universal.py     Universal mixed-game training runner
 docs/
   status.md            Current project status and active run notes
   proposal.md          Research proposal and project framing
   roadmap.md           Milestones and implementation phases
   architecture.md      Planned system architecture
   experiments.md       Experimental design and evaluation metrics
+  universal-agent.md   Universal-agent scaffold and run notes
   game-spec.md         N-dimensional Connect-K rules and definitions
   engine.md            Core engine API notes
 tests/
@@ -53,28 +56,27 @@ selection.
 
 Current validation:
 
-- Local lint and unit tests pass: `71 passed`.
+- Local lint and unit tests pass: `85 passed`.
 - Remote validation on `anthonypc` passes in the `torch` conda environment.
 - CUDA is available on `anthonypc` with an NVIDIA GeForce RTX 3060 Ti.
 - 3D 4x4x4 Connect-4 is promoted as stable. The guarded line-ResNet run reached
   final evals of `100.0%` vs random, `97.5%` vs tactical, `94.4%` vs heuristic,
   and `99.4%` vs MCTS-32 over 160 games per opponent.
-- 4D 4x4x4x4 Connect-4 is feasible but not solved. Smoke, initial training, and
-  a heuristic continuation completed with stable loss/resource behavior. The
-  current best readout is strong against random/MCTS but still weak against
-  tactical and heuristic opponents.
-- The active 4D tactical-weighted follow-up was paused on `anthonypc` so the
-  machine can be rebooted into Windows. It can be resumed from the stopped
-  process set or restarted from its latest checkpoint artifacts.
+- 4D 4x4x4x4 Connect-4 is feasible but not solved. The tactical-weighted
+  multi-seed follow-up completed, with seed 2 now the current specialist 4D
+  baseline at `100.0%` vs random, `55.0%` vs tactical, `55.0%` vs heuristic,
+  and `100.0%` vs MCTS-32 over 40 games per opponent.
+- The universal-agent scaffold is implemented and smoke-tested. The initial
+  mixed-game run remains the best universal checkpoint (`0.6055` at iteration
+  33); curriculum v2 and v3 continuations improved diagnostics but did not pass
+  promotion floors.
 
 Next experiments:
 
-- Resume or restart the 4D tactical-weighted follow-up and evaluate whether
-  deeper search plus heuristic/tactical-weighted checkpoint selection improves
-  4D threat defense.
-- Start the new universal-agent phase: train a single dimension-conditioned
-  agent that can play 2D, 3D, and 4D Connect-K variants with one shared policy
-  and value model.
+- Continue universal-agent tuning with stronger search or hard-position
+  curriculum pressure rather than only changing game-count weights.
+- Run targeted 4D specialist follow-ups only when they directly address the
+  tactical/heuristic tradeoff seen in the stronger-search probe.
 
 ## Working Name
 

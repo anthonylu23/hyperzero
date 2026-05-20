@@ -1,0 +1,45 @@
+[
+  {
+    "batch": 256,
+    "blocks": 3,
+    "checkpoint_keep_last": 5,
+    "connect_k": 4,
+    "estimate_minutes": 240,
+    "eval_checkpoint_stride": 3,
+    "eval_games": 16,
+    "eval_interval": 3,
+    "eval_max_checkpoints": 8,
+    "eval_score_weights": {
+      "heuristic": 0.5,
+      "random": 0.15,
+      "tactical": 0.35
+    },
+    "eval_simulations": 32,
+    "final_games": 40,
+    "games": 12,
+    "hidden": 192,
+    "iterations": 39,
+    "learning_rate": 0.00025,
+    "max_active_games": 12,
+    "model_type": "line_mlp",
+    "name": "fresh_4d_4x4x4x4_line_mlp_tactical_weighted_seed3",
+    "replay_capacity": 200000,
+    "seed": 3,
+    "series_games": 16,
+    "shape": [
+      4,
+      4,
+      4,
+      4
+    ],
+    "simulations": 32,
+    "steps": 32,
+    "symmetry_augmentation": "random",
+    "trace_loss_opponents": [
+      "heuristic",
+      "tactical"
+    ],
+    "trace_max_games": 10,
+    "trace_top_actions": 6
+  }
+]

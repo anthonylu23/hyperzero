@@ -11,7 +11,14 @@ from torch import nn
 
 from hyperzero.agents import AlphaZeroAgent
 from hyperzero.game.config import GameConfig
-from hyperzero.models import NeuralEvaluator, build_policy_value_model
+from hyperzero.models import (
+    NeuralEvaluator,
+    UniversalEvaluator,
+    UniversalModelConfig,
+    UniversalPolicyValueTransformer,
+    build_policy_value_model,
+)
+from hyperzero.training.universal_self_play import UniversalGameSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +28,19 @@ class LoadedCheckpoint:
     path: Path
     iteration: int
     game_config: GameConfig
+    model: nn.Module
+    training_config: dict[str, Any]
+    raw: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedUniversalCheckpoint:
+    """Loaded universal model checkpoint and metadata."""
+
+    path: Path
+    iteration: int
+    game_specs: tuple[UniversalGameSpec, ...]
+    model_config: UniversalModelConfig
     model: nn.Module
     training_config: dict[str, Any]
     raw: dict[str, Any]
@@ -89,6 +109,63 @@ def build_checkpoint_agent(
     agent_name = name or f"checkpoint-{checkpoint.iteration:04d}"
     agent = AlphaZeroAgent(
         NeuralEvaluator(checkpoint.model, device=resolve_device(device)),
+        simulations=simulations,
+        c_puct=c_puct,
+        seed=seed,
+        name=agent_name,
+    )
+    return agent, checkpoint
+
+
+def load_universal_training_checkpoint(
+    path: str | Path,
+    *,
+    device: str | torch.device = "cpu",
+) -> LoadedUniversalCheckpoint:
+    """Load a universal training checkpoint and rebuild its shared model."""
+    checkpoint_path = Path(path)
+    resolved_device = resolve_device(device)
+    raw = torch.load(
+        checkpoint_path,
+        map_location=resolved_device,
+        weights_only=False,
+    )
+    model_config = UniversalModelConfig.from_dict(raw["universal_model_config"])
+    model = UniversalPolicyValueTransformer(model_config)
+    model.load_state_dict(raw["model_state_dict"])
+    model.to(resolved_device)
+    model.eval()
+    return LoadedUniversalCheckpoint(
+        path=checkpoint_path,
+        iteration=int(raw.get("iteration", 0)),
+        game_specs=tuple(
+            UniversalGameSpec.from_dict(spec) for spec in raw["game_specs"]
+        ),
+        model_config=model_config,
+        model=model,
+        training_config=dict(raw.get("training_config", {})),
+        raw=raw,
+    )
+
+
+def build_universal_checkpoint_agent(
+    path: str | Path,
+    *,
+    simulations: int,
+    c_puct: float = 1.5,
+    device: str | torch.device = "cpu",
+    seed: int | None = None,
+    name: str | None = None,
+) -> tuple[AlphaZeroAgent, LoadedUniversalCheckpoint]:
+    """Load a universal checkpoint and wrap it as an AlphaZeroAgent."""
+    checkpoint = load_universal_training_checkpoint(path, device=device)
+    agent_name = name or f"universal-checkpoint-{checkpoint.iteration:04d}"
+    agent = AlphaZeroAgent(
+        UniversalEvaluator(
+            checkpoint.model,
+            checkpoint.model_config.encoder,
+            device=resolve_device(device),
+        ),
         simulations=simulations,
         c_puct=c_puct,
         seed=seed,

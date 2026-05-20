@@ -187,17 +187,22 @@ Current result:
 - Interpretation: the system runs in 4D and learns general play, but current
   self-play/search still fails to consistently prevent forks and tactical
   threats.
-- Active follow-up: `phase6_4d_tactical_weighted_20260519` raises search to
-  32 PUCT simulations and weights best-checkpoint selection toward heuristic
-  and tactical opponents. This run is currently paused on `anthonypc` for a
-  Windows reboot.
+- Tactical-weighted multi-seed follow-up completed. The best seed-2 checkpoint
+  reached `100.0%` vs random, `55.0%` vs tactical, `55.0%` vs heuristic, and
+  `100.0%` vs MCTS-32 over 40 games per opponent.
+- A short stronger-search probe resumed the seed-2 best checkpoint with 48 PUCT
+  simulations. It improved heuristic performance in a small final eval (`56.2%`
+  over 16 games) but tactical fell to `43.8%`, so the seed-2 tactical-weighted
+  checkpoint remains the promoted 4D specialist baseline.
 
 ## Phase 7: Universal Multi-Dimensional Agent
 
 Goal: Train one agent that can play 2D, 3D, and 4D Connect-K variants with a
 single shared model.
 
-Status: planned.
+Status: scaffold implemented, smoke-tested, and exercised by initial and v2
+mixed-game runs. Active work is curriculum/search tuning for heuristic
+consistency without tactical regression.
 
 Motivation:
 
@@ -209,20 +214,20 @@ Motivation:
 
 Required design changes:
 
-- Shape-conditioned observations: encode board dimensionality, board extents,
-  connect length, gravity axis, and legal-action mask.
-- Variable action spaces: support policy heads that can score legal moves for
-  different board/action shapes without retraining a separate output layer per
-  variant.
-- Dimension-aware architecture: prefer token/coordinate or line-incidence
-  models over fixed flattened MLP heads. Candidate first model is a
-  coordinate-conditioned transformer or line-token model.
-- Mixed-game replay: store game config with every replay example and sample
-  balanced batches across 2D, 3D, and 4D curricula.
-- Mixed-game self-play scheduler: interleave cheap 2D/3D games with smaller
-  4D batches, with explicit promotion gates per dimension.
-- Evaluation harness: report per-variant win rates and an aggregate score, but
-  prevent strong 2D performance from hiding weak 4D play.
+- Shape-conditioned observations: implemented in `hyperzero/universal/encoding.py`.
+- Variable action spaces: implemented with action-token scoring in
+  `UniversalPolicyValueTransformer`.
+- Dimension-aware architecture: implemented as a coordinate-conditioned token
+  transformer.
+- Mixed-game replay: implemented with config-aware replay examples and balanced
+  sampling.
+- Mixed-game self-play scheduler: implemented from named `UniversalGameSpec`
+  entries.
+- Evaluation harness: implemented with per-variant evals, aggregate score, and
+  minimum tactical win-rate tracking.
+- Resume with changed per-variant games/iteration: implemented so curriculum can
+  change across continuations while variant identity and model shape remain
+  strict.
 
 Initial curriculum:
 
@@ -231,6 +236,30 @@ Initial curriculum:
 3D: 4x4x4 K=4 promoted stability target
 4D: 4x4x4x4 K=4 tactical/heuristic stress target
 ```
+
+Prepared v2 curriculum:
+
+```text
+2D: 6x7 K=4, 32 games/iteration
+2D: 4x4 K=3, 8 games/iteration
+3D: 4x4x4 K=4, 16 games/iteration
+4D: 4x4x4x4 K=4, 12 games/iteration
+```
+
+V2 result:
+
+- Continued from the universal early best through iteration 40.
+- Best score was `0.4789`, below the prior `0.6055`.
+- Eval floors prevented checkpoint promotion; 2D 6x7 and 4D heuristic remained
+  weak despite lower training loss.
+
+V3 result:
+
+- Reduced 2D 6x7 from 32 to 16 games/iteration and increased 3D from 16 to 24.
+- Best score improved to `0.5609`, but no checkpoint passed floors and the run
+  still ended below the universal early best.
+- Curriculum reweighting alone is not enough; the next universal pass should
+  change search budget or add hard-position/anti-fork pressure.
 
 Exit criteria:
 

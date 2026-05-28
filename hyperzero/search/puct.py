@@ -62,10 +62,7 @@ class PUCTNode:
         for child in self.children.values():
             exploitation = -child.mean_value
             exploration = (
-                c_puct
-                * child.prior
-                * np.sqrt(parent_visits)
-                / (1 + child.visit_count)
+                c_puct * child.prior * np.sqrt(parent_visits) / (1 + child.visit_count)
             )
             score = exploitation + exploration
             if score > best_score:
@@ -84,12 +81,27 @@ class PUCTConfig:
     simulations: int = 50
     c_puct: float = 1.5
     root_tactical_guard: bool = True
+    root_dirichlet_alpha: float = 0.0
+    root_exploration_fraction: float = 0.0
+    root_temperature: float = 0.0
+    root_temperature_move_cutoff: int | None = None
 
     def __post_init__(self) -> None:
         if self.simulations <= 0:
             raise ValueError("simulations must be positive")
         if self.c_puct < 0.0:
             raise ValueError("c_puct must be nonnegative")
+        if self.root_dirichlet_alpha < 0.0:
+            raise ValueError("root_dirichlet_alpha must be nonnegative")
+        if not 0.0 <= self.root_exploration_fraction <= 1.0:
+            raise ValueError("root_exploration_fraction must be in [0, 1]")
+        if self.root_temperature < 0.0:
+            raise ValueError("root_temperature must be nonnegative")
+        if (
+            self.root_temperature_move_cutoff is not None
+            and self.root_temperature_move_cutoff < 0
+        ):
+            raise ValueError("root_temperature_move_cutoff must be nonnegative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +199,12 @@ class PUCTSearchSession:
         else:
             value = leaf.terminal_value
         if not was_initialized:
+            _apply_root_dirichlet_noise(
+                self.root,
+                alpha=self.config.root_dirichlet_alpha,
+                fraction=self.config.root_exploration_fraction,
+                rng=self.rng,
+            )
             return
         _backup(list(leaf.path), value, leaf.state.player_to_move)
         self.simulations_run += 1
@@ -205,7 +223,15 @@ class PUCTSearchSession:
         policy = normalize_legal_policy(visits, legal_mask)
         if self.config.root_tactical_guard:
             policy = _apply_root_tactical_guard(self.state, policy)
-        action = _select_root_action(policy, values, legal_mask, self.rng)
+        if _temperature_active(self.config, self.state.ply):
+            selection_policy = _temperature_policy(
+                policy,
+                legal_mask,
+                self.config.root_temperature,
+            )
+            action = _sample_root_action(selection_policy, legal_mask, self.rng)
+        else:
+            action = _select_root_action(policy, values, legal_mask, self.rng)
         return PUCTResult(action=action, policy=policy, visits=visits, root=self.root)
 
 
@@ -261,6 +287,22 @@ def _expand_with_evaluation(
     return float(evaluation.value)
 
 
+def _apply_root_dirichlet_noise(
+    root: PUCTNode,
+    *,
+    alpha: float,
+    fraction: float,
+    rng: np.random.Generator,
+) -> None:
+    if alpha <= 0.0 or fraction <= 0.0 or len(root.children) <= 1:
+        return
+    actions = list(root.children)
+    noise = rng.dirichlet(np.full(len(actions), alpha, dtype=np.float64))
+    for action, noise_value in zip(actions, noise, strict=True):
+        child = root.children[action]
+        child.prior = float((1.0 - fraction) * child.prior + fraction * noise_value)
+
+
 def _backup(path: list[PUCTNode], value: float, value_player: int) -> None:
     for node in path:
         node.visit_count += 1
@@ -311,6 +353,51 @@ def _opponent_has_immediate_win_after(state: GameState, action: int) -> bool:
         return False
     finally:
         state.undo_move()
+
+
+def _temperature_active(config: PUCTConfig, ply: int) -> bool:
+    if config.root_temperature <= 0.0:
+        return False
+    cutoff = config.root_temperature_move_cutoff
+    return cutoff is None or ply < cutoff
+
+
+def _temperature_policy(
+    policy: np.ndarray,
+    legal_mask: np.ndarray,
+    temperature: float,
+) -> np.ndarray:
+    if temperature <= 0.0:
+        return policy
+    legal_actions = np.flatnonzero(legal_mask)
+    if legal_actions.size == 0:
+        return policy
+    legal_policy = np.asarray(policy[legal_actions], dtype=np.float64)
+    if legal_policy.sum() <= 0.0:
+        return normalize_legal_policy(legal_mask.astype(np.float64), legal_mask)
+
+    logits = np.log(np.maximum(legal_policy, 1e-12)) / temperature
+    logits -= logits.max()
+    adjusted_legal = np.exp(logits)
+    adjusted_legal /= adjusted_legal.sum()
+    adjusted = np.zeros_like(policy, dtype=np.float64)
+    adjusted[legal_actions] = adjusted_legal
+    return adjusted
+
+
+def _sample_root_action(
+    policy: np.ndarray,
+    legal_mask: np.ndarray,
+    rng: np.random.Generator,
+) -> int:
+    legal_actions = np.flatnonzero(legal_mask)
+    if legal_actions.size == 0:
+        raise ValueError("cannot select a root action without legal moves")
+    legal_policy = np.asarray(policy[legal_actions], dtype=np.float64)
+    total = legal_policy.sum()
+    if total <= 0.0:
+        return int(rng.choice(legal_actions))
+    return int(rng.choice(legal_actions, p=legal_policy / total))
 
 
 def _select_root_action(

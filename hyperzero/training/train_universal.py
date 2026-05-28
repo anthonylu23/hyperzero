@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import queue
 import shutil
+import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, replace
+from multiprocessing import get_context
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +41,7 @@ from hyperzero.training.universal_replay import (
 from hyperzero.training.universal_self_play import (
     UniversalGameSpec,
     generate_universal_examples,
+    generate_universal_examples_batched_across_specs,
 )
 from hyperzero.universal.encoding import (
     UniversalBatch,
@@ -65,11 +70,19 @@ class UniversalTrainingConfig:
     heads: int = 4
     max_rank: int = 4
     max_board_extent: int = 8
+    line_features: bool = False
+    input_layer_norm: bool = False
+    rank_adapters: bool = False
+    rank_head_adapters: bool = False
+    adapter_size: int = 0
     seed: int = 0
     device: str = "cpu"
     checkpoint_dir: str | Path | None = None
     checkpoint_keep_last: int | None = None
     resume_from_checkpoint: str | Path | None = None
+    reset_optimizer_on_resume: bool = False
+    reset_replay_on_resume: bool = False
+    reset_rng_on_resume: bool = False
     metrics_path: str | Path | None = None
     eval_games_per_variant: int = 0
     eval_opponents: tuple[str, ...] = ()
@@ -80,6 +93,17 @@ class UniversalTrainingConfig:
     eval_score_floors: dict[str, Any] | None = None
     batched_self_play: bool = False
     max_active_self_play_games: int | None = None
+    eval_workers: int = 1
+    self_play_workers: int = 1
+    central_batched_self_play: bool = False
+    balanced_replay: bool = True
+    root_dirichlet_alpha: float = 0.0
+    root_exploration_fraction: float = 0.0
+    root_temperature: float = 0.0
+    root_temperature_move_cutoff: int | None = None
+    teacher_replay_path: str | Path | None = None
+    teacher_batch_fraction: float = 0.0
+    line_policy_residual: bool = False
 
     def __post_init__(self) -> None:
         if not self.game_specs:
@@ -104,6 +128,8 @@ class UniversalTrainingConfig:
             raise ValueError("weight_decay must be nonnegative")
         if self.value_weight < 0.0:
             raise ValueError("value_weight must be nonnegative")
+        if self.adapter_size < 0:
+            raise ValueError("adapter_size must be nonnegative")
         if self.checkpoint_keep_last is not None and self.checkpoint_keep_last <= 0:
             raise ValueError("checkpoint_keep_last must be positive when set")
         if self.eval_games_per_variant < 0:
@@ -119,6 +145,29 @@ class UniversalTrainingConfig:
             and self.max_active_self_play_games <= 0
         ):
             raise ValueError("max_active_self_play_games must be positive when set")
+        if self.eval_workers <= 0:
+            raise ValueError("eval_workers must be positive")
+        if self.self_play_workers <= 0:
+            raise ValueError("self_play_workers must be positive")
+        if self.root_dirichlet_alpha < 0.0:
+            raise ValueError("root_dirichlet_alpha must be nonnegative")
+        if not 0.0 <= self.root_exploration_fraction <= 1.0:
+            raise ValueError("root_exploration_fraction must be in [0, 1]")
+        if self.root_temperature < 0.0:
+            raise ValueError("root_temperature must be nonnegative")
+        if (
+            self.root_temperature_move_cutoff is not None
+            and self.root_temperature_move_cutoff < 0
+        ):
+            raise ValueError("root_temperature_move_cutoff must be nonnegative")
+        if not 0.0 <= self.teacher_batch_fraction <= 1.0:
+            raise ValueError("teacher_batch_fraction must be in [0, 1]")
+        if self.teacher_batch_fraction > 0.0 and self.teacher_replay_path is None:
+            raise ValueError(
+                "teacher_replay_path is required when teacher_batch_fraction is set"
+            )
+        if self.line_policy_residual and not self.line_features:
+            raise ValueError("line_policy_residual requires line_features")
         for opponent in self.eval_opponents:
             if opponent not in ("random", "tactical", "heuristic", "mcts"):
                 raise ValueError(f"unknown eval opponent: {opponent}")
@@ -177,6 +226,11 @@ class UniversalTrainingMetrics:
     eval_floor_passed: bool | None = None
     eval_floor_failures: tuple[str, ...] = ()
     checkpoint_path: str | None = None
+    eval_workers: int = 1
+    self_play_workers: int = 1
+    central_batched_self_play: bool = False
+    teacher_replay_size: int = 0
+    teacher_batch_fraction: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +240,64 @@ class UniversalTrainingResult:
     model: nn.Module
     metrics: tuple[UniversalTrainingMetrics, ...]
     replay_size: int
+
+
+@dataclass(frozen=True, slots=True)
+class _InferenceStats:
+    time_seconds: float = 0.0
+    batches: int = 0
+    states: int = 0
+
+    def add(self, other: _InferenceStats) -> _InferenceStats:
+        return _InferenceStats(
+            time_seconds=self.time_seconds + other.time_seconds,
+            batches=self.batches + other.batches,
+            states=self.states + other.states,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _SelfPlayWorkerResult:
+    examples: list[UniversalSelfPlayExample]
+    games: int
+    average_length: float
+    inference_stats: _InferenceStats
+
+
+@dataclass(frozen=True, slots=True)
+class _EvalWorkerResult:
+    config_id: str
+    opponent_name: str
+    stats: dict[str, float | int]
+    inference_stats: _InferenceStats
+
+
+@dataclass(slots=True)
+class _QueuedUniversalEvaluator:
+    request_queue: Any
+    response_queue: Any
+    worker_index: int
+    inference_time_seconds: float = 0.0
+    inference_batches: int = 0
+    inference_states: int = 0
+    request_id: int = 0
+
+    def evaluate(self, state: Any):
+        return self.evaluate_many([state])[0]
+
+    def evaluate_many(self, states: list[Any]):
+        self.request_id += 1
+        self.request_queue.put((self.worker_index, self.request_id, states))
+        response_id, evaluations, stats = self.response_queue.get()
+        if response_id != self.request_id:
+            raise RuntimeError(
+                f"queued evaluator response id {response_id} did not match "
+                f"request id {self.request_id}"
+            )
+        self.inference_time_seconds += stats.time_seconds
+        self.inference_batches += stats.batches
+        self.inference_states += stats.states
+        return evaluations
 
 
 def train_universal(
@@ -209,6 +321,10 @@ def train_universal(
         weight_decay=config.weight_decay,
     )
     replay = UniversalReplayBuffer(config.replay_capacity, seed=config.seed)
+    teacher_replay = _load_teacher_replay(
+        config.teacher_replay_path,
+        seed=config.seed + 1,
+    )
     if config.resume_from_checkpoint is not None:
         resume_payload = _load_resume_payload(config.resume_from_checkpoint, device)
         _restore_training_state(
@@ -227,11 +343,17 @@ def train_universal(
     search_config = PUCTConfig(
         simulations=config.puct_simulations,
         c_puct=config.c_puct,
+        root_dirichlet_alpha=config.root_dirichlet_alpha,
+        root_exploration_fraction=config.root_exploration_fraction,
+        root_temperature=config.root_temperature,
+        root_temperature_move_cutoff=config.root_temperature_move_cutoff,
     )
     metrics: list[UniversalTrainingMetrics] = list(previous_metrics)
     model_parameters = count_parameters(model)
     best_eval_score: float | None = None
     best_checkpoint_path: str | None = None
+    best_current_run_raw_score: float | None = None
+    best_current_run_floor_passing_score: float | None = None
     for previous_metric in metrics:
         if previous_metric.best_eval_score is not None:
             best_eval_score = previous_metric.best_eval_score
@@ -242,11 +364,19 @@ def train_universal(
         iteration_start = time.perf_counter()
         evaluator = UniversalEvaluator(model, model_config.encoder, device=device)
         self_play_start = time.perf_counter()
-        examples, game_counts, average_lengths = _generate_iteration_examples(
+        (
+            examples,
+            game_counts,
+            average_lengths,
+            self_play_inference_stats,
+        ) = _generate_iteration_examples(
             config,
-            evaluator,
-            search_config,
-            rng,
+            model,
+            model_config=model_config,
+            device=device,
+            evaluator=evaluator,
+            search_config=search_config,
+            rng=rng,
         )
         self_play_time_seconds = time.perf_counter() - self_play_start
         replay.add_many(examples)
@@ -260,7 +390,13 @@ def train_universal(
                 _training_step(
                     model,
                     optimizer,
-                    replay.sample(config.batch_size, balanced=True),
+                    _sample_training_batch(
+                        replay,
+                        teacher_replay,
+                        batch_size=config.batch_size,
+                        teacher_batch_fraction=config.teacher_batch_fraction,
+                        balanced=config.balanced_replay,
+                    ),
                     value_weight=config.value_weight,
                     model_config=model_config,
                     device=device,
@@ -290,11 +426,32 @@ def train_universal(
             and eval_floor_passed is not False
             and (best_eval_score is None or eval_score > best_eval_score)
         )
+        is_best_current_run_raw = (
+            checkpoint_path is not None
+            and eval_score is not None
+            and (
+                best_current_run_raw_score is None
+                or eval_score > best_current_run_raw_score
+            )
+        )
+        is_best_current_run_floor_passing = (
+            checkpoint_path is not None
+            and eval_score is not None
+            and eval_floor_passed is not False
+            and (
+                best_current_run_floor_passing_score is None
+                or eval_score > best_current_run_floor_passing_score
+            )
+        )
         if is_best_checkpoint:
             best_eval_score = eval_score
             best_checkpoint_path = str(
                 Path(checkpoint_path).parent / "best_by_eval_score.pt"
             )
+        if is_best_current_run_raw:
+            best_current_run_raw_score = eval_score
+        if is_best_current_run_floor_passing:
+            best_current_run_floor_passing_score = eval_score
 
         examples_by_config = _count_examples(examples)
         metric = UniversalTrainingMetrics(
@@ -337,9 +494,9 @@ def train_universal(
             self_play_time_seconds=self_play_time_seconds,
             training_step_time_seconds=training_step_time_seconds,
             eval_time_seconds=eval_time_seconds,
-            self_play_inference_time_seconds=evaluator.inference_time_seconds,
-            self_play_inference_batches=evaluator.inference_batches,
-            self_play_inference_states=evaluator.inference_states,
+            self_play_inference_time_seconds=self_play_inference_stats.time_seconds,
+            self_play_inference_batches=self_play_inference_stats.batches,
+            self_play_inference_states=self_play_inference_stats.states,
             eval_inference_time_seconds=eval_time_stats[0],
             eval_inference_batches=eval_time_stats[1],
             eval_inference_states=eval_time_stats[2],
@@ -347,6 +504,11 @@ def train_universal(
             eval_floor_passed=eval_floor_passed,
             eval_floor_failures=eval_floor_failures,
             checkpoint_path=checkpoint_path,
+            eval_workers=config.eval_workers,
+            self_play_workers=config.self_play_workers,
+            central_batched_self_play=config.central_batched_self_play,
+            teacher_replay_size=0 if teacher_replay is None else len(teacher_replay),
+            teacher_batch_fraction=config.teacher_batch_fraction,
         )
         checkpoint_start = time.perf_counter()
         saved_checkpoint_path = _save_checkpoint(
@@ -361,6 +523,21 @@ def train_universal(
         )
         if saved_checkpoint_path is not None and is_best_checkpoint:
             best_checkpoint_path = _copy_best_checkpoint(saved_checkpoint_path)
+        current_run_best_paths = []
+        if saved_checkpoint_path is not None and is_best_current_run_raw:
+            current_run_best_paths.append(
+                _copy_named_checkpoint(
+                    saved_checkpoint_path,
+                    "best_current_run_raw.pt",
+                )
+            )
+        if saved_checkpoint_path is not None and is_best_current_run_floor_passing:
+            current_run_best_paths.append(
+                _copy_named_checkpoint(
+                    saved_checkpoint_path,
+                    "best_current_run_floor_passing.pt",
+                )
+            )
         if saved_checkpoint_path is not None:
             _prune_checkpoints(
                 Path(saved_checkpoint_path).parent,
@@ -372,6 +549,8 @@ def train_universal(
             _sync_checkpoint_metric(saved_checkpoint_path, metric)
             if is_best_checkpoint and best_checkpoint_path is not None:
                 _sync_checkpoint_metric(best_checkpoint_path, metric)
+            for current_run_best_path in current_run_best_paths:
+                _sync_checkpoint_metric(current_run_best_path, metric)
         metrics.append(metric)
         _append_metrics_jsonl(config, metric)
 
@@ -387,19 +566,82 @@ def _model_config(config: UniversalTrainingConfig) -> UniversalModelConfig:
         hidden_size=config.hidden_size,
         residual_blocks=config.residual_blocks,
         heads=config.heads,
+        input_layer_norm=config.input_layer_norm,
+        rank_adapters=config.rank_adapters,
+        rank_head_adapters=config.rank_head_adapters,
+        adapter_size=config.adapter_size,
+        line_policy_residual=config.line_policy_residual,
         encoder=UniversalEncoderConfig(
             max_rank=config.max_rank,
             max_board_extent=config.max_board_extent,
+            line_features=config.line_features,
         ),
     )
 
 
+def _cpu_model_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
+    return {
+        name: tensor.detach().cpu().clone()
+        for name, tensor in model.state_dict().items()
+    }
+
+
+def _build_worker_model(
+    model_config: UniversalModelConfig,
+    state_dict: dict[str, torch.Tensor],
+) -> UniversalPolicyValueTransformer:
+    torch.set_num_threads(1)
+    model = UniversalPolicyValueTransformer(model_config)
+    model.load_state_dict(state_dict)
+    model.eval()
+    return model
+
+
 def _generate_iteration_examples(
     config: UniversalTrainingConfig,
+    model: nn.Module,
+    *,
+    model_config: UniversalModelConfig,
+    device: torch.device,
     evaluator: UniversalEvaluator,
     search_config: PUCTConfig,
     rng: np.random.Generator,
-) -> tuple[list[UniversalSelfPlayExample], dict[str, int], dict[str, float]]:
+) -> tuple[
+    list[UniversalSelfPlayExample],
+    dict[str, int],
+    dict[str, float],
+    _InferenceStats,
+]:
+    if config.self_play_workers > 1:
+        return _generate_iteration_examples_parallel(
+            config,
+            model,
+            model_config=model_config,
+            device=device,
+            search_config=search_config,
+            rng=rng,
+        )
+    if config.central_batched_self_play:
+        examples, game_counts, average_lengths = (
+            generate_universal_examples_batched_across_specs(
+                config.game_specs,
+                evaluator,
+                search_config=search_config,
+                rng=rng,
+                max_active_games=config.max_active_self_play_games,
+            )
+        )
+        return (
+            examples,
+            game_counts,
+            average_lengths,
+            _InferenceStats(
+                evaluator.inference_time_seconds,
+                evaluator.inference_batches,
+                evaluator.inference_states,
+            ),
+        )
+
     examples: list[UniversalSelfPlayExample] = []
     game_counts: dict[str, int] = {}
     average_lengths: dict[str, float] = {}
@@ -416,7 +658,366 @@ def _generate_iteration_examples(
         examples.extend(spec_examples)
         game_counts[spec.config_id] = games
         average_lengths[spec.config_id] = average_length
-    return examples, game_counts, average_lengths
+    return (
+        examples,
+        game_counts,
+        average_lengths,
+        _InferenceStats(
+            evaluator.inference_time_seconds,
+            evaluator.inference_batches,
+            evaluator.inference_states,
+        ),
+    )
+
+
+def _generate_iteration_examples_parallel(
+    config: UniversalTrainingConfig,
+    model: nn.Module,
+    *,
+    model_config: UniversalModelConfig,
+    device: torch.device,
+    search_config: PUCTConfig,
+    rng: np.random.Generator,
+) -> tuple[
+    list[UniversalSelfPlayExample],
+    dict[str, int],
+    dict[str, float],
+    _InferenceStats,
+]:
+    spec_tasks = _split_self_play_specs(config)
+    if config.central_batched_self_play:
+        return _generate_iteration_examples_queued(
+            config,
+            model,
+            model_config=model_config,
+            device=device,
+            search_config=search_config,
+            rng=rng,
+            spec_tasks=spec_tasks,
+        )
+
+    model_state_dict = _cpu_model_state_dict(model)
+    worker_count = min(config.self_play_workers, len(spec_tasks))
+    futures = {}
+    ctx = get_context("spawn")
+    with ProcessPoolExecutor(max_workers=worker_count, mp_context=ctx) as executor:
+        for spec in spec_tasks:
+            spec_seed = int(rng.integers(2**63 - 1))
+            future = executor.submit(
+                _self_play_worker,
+                model_state_dict,
+                model_config,
+                spec,
+                search_config,
+                spec_seed,
+                config.batched_self_play,
+                config.max_active_self_play_games,
+            )
+            futures[future] = spec
+
+    examples: list[UniversalSelfPlayExample] = []
+    game_counts: dict[str, int] = {}
+    total_lengths: dict[str, float] = {}
+    inference_stats = _InferenceStats()
+    for future, spec in futures.items():
+        result = future.result()
+        examples.extend(result.examples)
+        game_counts[spec.config_id] = game_counts.get(spec.config_id, 0) + result.games
+        total_lengths[spec.config_id] = total_lengths.get(spec.config_id, 0.0) + (
+            result.average_length * result.games
+        )
+        inference_stats = inference_stats.add(result.inference_stats)
+    average_lengths = {
+        config_id: total_lengths[config_id] / games
+        for config_id, games in game_counts.items()
+    }
+    return examples, game_counts, average_lengths, inference_stats
+
+
+def _split_self_play_specs(
+    config: UniversalTrainingConfig,
+) -> list[UniversalGameSpec]:
+    tasks: list[UniversalGameSpec] = []
+    for spec in config.game_specs:
+        chunks = min(config.self_play_workers, spec.self_play_games_per_iteration)
+        base_games, extra_games = divmod(spec.self_play_games_per_iteration, chunks)
+        for chunk_index in range(chunks):
+            games = base_games + (1 if chunk_index < extra_games else 0)
+            if games <= 0:
+                continue
+            tasks.append(
+                UniversalGameSpec(
+                    spec.config_id,
+                    spec.game_config,
+                    games,
+                )
+            )
+    return tasks
+
+
+def _generate_iteration_examples_queued(
+    config: UniversalTrainingConfig,
+    model: nn.Module,
+    *,
+    model_config: UniversalModelConfig,
+    device: torch.device,
+    search_config: PUCTConfig,
+    rng: np.random.Generator,
+    spec_tasks: list[UniversalGameSpec],
+) -> tuple[
+    list[UniversalSelfPlayExample],
+    dict[str, int],
+    dict[str, float],
+    _InferenceStats,
+]:
+    worker_count = min(config.self_play_workers, len(spec_tasks))
+    ctx = get_context("spawn")
+    server_stats: dict[str, _InferenceStats] = {}
+    with ctx.Manager() as manager:
+        request_queue = manager.Queue(maxsize=worker_count * 4)
+        response_queues = [manager.Queue() for _ in spec_tasks]
+        server_thread = threading.Thread(
+            target=_gpu_inference_server,
+            args=(
+                model,
+                model_config,
+                device,
+                request_queue,
+                response_queues,
+                server_stats,
+            ),
+            daemon=True,
+        )
+        server_thread.start()
+        futures = {}
+        should_stop_server = True
+        try:
+            with ProcessPoolExecutor(
+                max_workers=worker_count,
+                mp_context=ctx,
+            ) as executor:
+                for worker_index, spec in enumerate(spec_tasks):
+                    spec_seed = int(rng.integers(2**63 - 1))
+                    future = executor.submit(
+                        _self_play_queued_worker,
+                        worker_index,
+                        request_queue,
+                        response_queues[worker_index],
+                        spec,
+                        search_config,
+                        spec_seed,
+                        config.batched_self_play,
+                        config.max_active_self_play_games,
+                    )
+                    futures[future] = spec
+
+            examples: list[UniversalSelfPlayExample] = []
+            game_counts: dict[str, int] = {}
+            total_lengths: dict[str, float] = {}
+            for future, spec in futures.items():
+                result = future.result()
+                examples.extend(result.examples)
+                game_counts[spec.config_id] = (
+                    game_counts.get(spec.config_id, 0) + result.games
+                )
+                total_lengths[spec.config_id] = total_lengths.get(
+                    spec.config_id,
+                    0.0,
+                ) + (result.average_length * result.games)
+            request_queue.put(None)
+            server_thread.join(timeout=30.0)
+            should_stop_server = False
+            average_lengths = {
+                config_id: total_lengths[config_id] / games
+                for config_id, games in game_counts.items()
+            }
+            return (
+                examples,
+                game_counts,
+                average_lengths,
+                server_stats.get("stats", _InferenceStats()),
+            )
+        finally:
+            if should_stop_server:
+                request_queue.put(None)
+                server_thread.join(timeout=30.0)
+
+
+def _gpu_inference_server(
+    model: nn.Module,
+    model_config: UniversalModelConfig,
+    device: torch.device,
+    request_queue: Any,
+    response_queues: list[Any],
+    server_stats: dict[str, _InferenceStats],
+) -> None:
+    evaluator = UniversalEvaluator(model, model_config.encoder, device=device)
+    while True:
+        item = request_queue.get()
+        if item is None:
+            break
+        items = [item]
+        deadline = time.perf_counter() + 0.002
+        while time.perf_counter() < deadline:
+            try:
+                next_item = request_queue.get_nowait()
+            except queue.Empty:
+                break
+            if next_item is None:
+                request_queue.put(None)
+                break
+            items.append(next_item)
+
+        states = []
+        spans = []
+        for worker_index, request_id, request_states in items:
+            start = len(states)
+            states.extend(request_states)
+            spans.append((worker_index, request_id, start, len(states)))
+        before = _InferenceStats(
+            evaluator.inference_time_seconds,
+            evaluator.inference_batches,
+            evaluator.inference_states,
+        )
+        evaluations = evaluator.evaluate_many(states)
+        after = _InferenceStats(
+            evaluator.inference_time_seconds,
+            evaluator.inference_batches,
+            evaluator.inference_states,
+        )
+        batch_stats = _InferenceStats(
+            after.time_seconds - before.time_seconds,
+            after.batches - before.batches,
+            after.states - before.states,
+        )
+        for worker_index, request_id, start, end in spans:
+            response_queues[worker_index].put(
+                (request_id, evaluations[start:end], batch_stats)
+            )
+    server_stats["stats"] = _InferenceStats(
+        evaluator.inference_time_seconds,
+        evaluator.inference_batches,
+        evaluator.inference_states,
+    )
+
+
+def _self_play_worker(
+    model_state_dict: dict[str, torch.Tensor],
+    model_config: UniversalModelConfig,
+    spec: UniversalGameSpec,
+    search_config: PUCTConfig,
+    seed: int,
+    batched_self_play: bool,
+    max_active_games: int | None,
+) -> _SelfPlayWorkerResult:
+    worker_model = _build_worker_model(model_config, model_state_dict)
+    evaluator = UniversalEvaluator(worker_model, model_config.encoder, device="cpu")
+    examples, games, average_length = generate_universal_examples(
+        spec,
+        evaluator,
+        search_config=search_config,
+        rng=np.random.default_rng(seed),
+        batched_self_play=batched_self_play,
+        max_active_games=max_active_games,
+    )
+    return _SelfPlayWorkerResult(
+        examples=examples,
+        games=games,
+        average_length=average_length,
+        inference_stats=_InferenceStats(
+            evaluator.inference_time_seconds,
+            evaluator.inference_batches,
+            evaluator.inference_states,
+        ),
+    )
+
+
+def _self_play_queued_worker(
+    worker_index: int,
+    request_queue: Any,
+    response_queue: Any,
+    spec: UniversalGameSpec,
+    search_config: PUCTConfig,
+    seed: int,
+    batched_self_play: bool,
+    max_active_games: int | None,
+) -> _SelfPlayWorkerResult:
+    torch.set_num_threads(1)
+    evaluator = _QueuedUniversalEvaluator(
+        request_queue=request_queue,
+        response_queue=response_queue,
+        worker_index=worker_index,
+    )
+    examples, games, average_length = generate_universal_examples(
+        spec,
+        evaluator,
+        search_config=search_config,
+        rng=np.random.default_rng(seed),
+        batched_self_play=batched_self_play,
+        max_active_games=max_active_games,
+    )
+    return _SelfPlayWorkerResult(
+        examples=examples,
+        games=games,
+        average_length=average_length,
+        inference_stats=_InferenceStats(
+            evaluator.inference_time_seconds,
+            evaluator.inference_batches,
+            evaluator.inference_states,
+        ),
+    )
+
+
+def _load_teacher_replay(
+    path: str | Path | None,
+    *,
+    seed: int,
+) -> UniversalReplayBuffer | None:
+    if path is None:
+        return None
+    payload = torch.load(Path(path), map_location="cpu", weights_only=False)
+    if not isinstance(payload, dict) or "examples" not in payload:
+        raise ValueError("teacher replay payload must be a mapping with examples")
+    examples = payload["examples"]
+    if not isinstance(examples, list):
+        raise ValueError("teacher replay examples must be a list")
+    if not examples:
+        raise ValueError("teacher replay must contain at least one example")
+    for example in examples:
+        if not isinstance(example, UniversalSelfPlayExample):
+            raise ValueError("teacher replay examples must be UniversalSelfPlayExample")
+    teacher_replay = UniversalReplayBuffer(capacity=len(examples), seed=seed)
+    teacher_replay.add_many(examples)
+    return teacher_replay
+
+
+def _sample_training_batch(
+    replay: UniversalReplayBuffer,
+    teacher_replay: UniversalReplayBuffer | None,
+    *,
+    batch_size: int,
+    teacher_batch_fraction: float,
+    balanced: bool,
+) -> list[UniversalSelfPlayExample]:
+    if teacher_replay is None or teacher_batch_fraction <= 0.0:
+        return replay.sample(batch_size, balanced=balanced)
+
+    teacher_size = _teacher_batch_size(batch_size, teacher_batch_fraction)
+    main_size = batch_size - teacher_size
+    examples: list[UniversalSelfPlayExample] = []
+    if main_size > 0:
+        examples.extend(replay.sample(main_size, balanced=balanced))
+    examples.extend(teacher_replay.sample(teacher_size, balanced=balanced))
+    replay.rng.shuffle(examples)
+    return examples
+
+
+def _teacher_batch_size(batch_size: int, teacher_batch_fraction: float) -> int:
+    if batch_size <= 1:
+        return batch_size
+    if teacher_batch_fraction >= 1.0:
+        return batch_size
+    return min(batch_size - 1, max(1, int(round(batch_size * teacher_batch_fraction))))
 
 
 def _training_step(
@@ -534,6 +1135,14 @@ def _evaluate_training_model(
     ):
         return {}, (0.0, 0, 0)
 
+    if config.eval_workers > 1:
+        return _evaluate_training_model_parallel(
+            config,
+            model,
+            model_config=model_config,
+            iteration=iteration,
+        )
+
     results: dict[str, dict[str, dict[str, float | int]]] = {}
     inference_time_seconds = 0.0
     inference_batches = 0
@@ -567,6 +1176,105 @@ def _evaluate_training_model(
             inference_states += evaluator.inference_states
         results[spec.config_id] = spec_results
     return results, (inference_time_seconds, inference_batches, inference_states)
+
+
+def _evaluate_training_model_parallel(
+    config: UniversalTrainingConfig,
+    model: nn.Module,
+    *,
+    model_config: UniversalModelConfig,
+    iteration: int,
+) -> tuple[dict[str, dict[str, dict[str, float | int]]], tuple[float, int, int]]:
+    model_state_dict = _cpu_model_state_dict(model)
+    tasks = []
+    for spec_index, spec in enumerate(config.game_specs):
+        for opponent_index, opponent_name in enumerate(config.eval_opponents):
+            seed_offset = iteration * 1000 + spec_index * 100 + opponent_index
+            tasks.append((spec, opponent_name, seed_offset))
+
+    worker_count = min(config.eval_workers, len(tasks))
+    futures = []
+    ctx = get_context("spawn")
+    with ProcessPoolExecutor(max_workers=worker_count, mp_context=ctx) as executor:
+        for spec, opponent_name, seed_offset in tasks:
+            futures.append(
+                executor.submit(
+                    _eval_worker,
+                    model_state_dict,
+                    model_config,
+                    spec,
+                    opponent_name,
+                    config.eval_games_per_variant,
+                    config.eval_simulations,
+                    config.eval_mcts_simulations,
+                    config.c_puct,
+                    config.seed + 30_000 + seed_offset,
+                    config.seed + 40_000 + seed_offset,
+                    iteration,
+                )
+            )
+
+    results: dict[str, dict[str, dict[str, float | int]]] = {
+        spec.config_id: {} for spec in config.game_specs
+    }
+    inference_stats = _InferenceStats()
+    for future in futures:
+        result = future.result()
+        results[result.config_id][result.opponent_name] = result.stats
+        inference_stats = inference_stats.add(result.inference_stats)
+    return (
+        results,
+        (
+            inference_stats.time_seconds,
+            inference_stats.batches,
+            inference_stats.states,
+        ),
+    )
+
+
+def _eval_worker(
+    model_state_dict: dict[str, torch.Tensor],
+    model_config: UniversalModelConfig,
+    spec: UniversalGameSpec,
+    opponent_name: str,
+    eval_games: int,
+    eval_simulations: int,
+    eval_mcts_simulations: int,
+    c_puct: float,
+    agent_seed: int,
+    opponent_seed: int,
+    iteration: int,
+) -> _EvalWorkerResult:
+    worker_model = _build_worker_model(model_config, model_state_dict)
+    evaluator = UniversalEvaluator(worker_model, model_config.encoder, device="cpu")
+    agent = AlphaZeroAgent(
+        evaluator,
+        simulations=eval_simulations,
+        c_puct=c_puct,
+        seed=agent_seed,
+        name=f"universal-iteration-{iteration:04d}",
+    )
+    opponent = _build_baseline_agent(
+        opponent_name,
+        seed=opponent_seed,
+        mcts_simulations=eval_mcts_simulations,
+    )
+    stats = evaluate_matchup(
+        spec.game_config,
+        agent,
+        opponent,
+        games=eval_games,
+    )
+    return _EvalWorkerResult(
+        config_id=spec.config_id,
+        opponent_name=opponent_name,
+        stats=stats.to_dict(),
+        inference_stats=_InferenceStats(
+            evaluator.inference_time_seconds,
+            evaluator.inference_batches,
+            evaluator.inference_states,
+        ),
+    )
 
 
 def _score_evaluations(
@@ -750,23 +1458,52 @@ def _restore_training_state(
         actual = checkpoint_training_config.get(key)
         if actual is not None and actual != expected:
             raise ValueError(
-                f"resume checkpoint {key}={actual!r} does not match config "
-                f"{expected!r}"
+                f"resume checkpoint {key}={actual!r} does not match config {expected!r}"
             )
     if int(payload["iteration"]) >= config.iterations:
         raise ValueError("resume checkpoint iteration is already at or past iterations")
-    model.load_state_dict(payload["model_state_dict"])
-    optimizer.load_state_dict(payload["optimizer_state_dict"])
-    replay_payload = payload.get("replay_buffer")
-    if replay_payload is None:
-        raise ValueError("resume checkpoint does not include replay_buffer state")
-    replay.load_state_dict(replay_payload)
-    torch_rng_state = payload.get("torch_rng_state")
-    if torch_rng_state is not None:
-        torch.random.set_rng_state(torch_rng_state.cpu())
-    numpy_rng_state = payload.get("numpy_rng_state")
-    if numpy_rng_state is not None:
-        rng.bit_generator.state = numpy_rng_state
+    _load_resume_model_state(model, payload["model_state_dict"])
+    if not config.reset_optimizer_on_resume:
+        optimizer.load_state_dict(payload["optimizer_state_dict"])
+    if not config.reset_replay_on_resume:
+        replay_payload = payload.get("replay_buffer")
+        if replay_payload is None:
+            raise ValueError("resume checkpoint does not include replay_buffer state")
+        replay.load_state_dict(replay_payload)
+    if not config.reset_rng_on_resume:
+        torch_rng_state = payload.get("torch_rng_state")
+        if torch_rng_state is not None:
+            torch.random.set_rng_state(torch_rng_state.cpu())
+        numpy_rng_state = payload.get("numpy_rng_state")
+        if numpy_rng_state is not None:
+            rng.bit_generator.state = numpy_rng_state
+
+
+def _load_resume_model_state(
+    model: nn.Module,
+    state_dict: dict[str, torch.Tensor],
+) -> None:
+    result = model.load_state_dict(state_dict, strict=False)
+    allowed_missing_prefixes = (
+        "policy_rank_head_adapters.",
+        "value_rank_head_adapters.",
+        "line_policy_residual.",
+    )
+    unexpected_keys = list(result.unexpected_keys)
+    disallowed_missing_keys = [
+        key
+        for key in result.missing_keys
+        if not key.startswith(allowed_missing_prefixes)
+    ]
+    if unexpected_keys or disallowed_missing_keys:
+        details = []
+        if unexpected_keys:
+            details.append(f"unexpected={unexpected_keys}")
+        if disallowed_missing_keys:
+            details.append(f"missing={disallowed_missing_keys}")
+        raise RuntimeError(
+            "resume checkpoint model state mismatch: " + "; ".join(details)
+        )
 
 
 def _validate_resume_game_specs(
@@ -792,8 +1529,12 @@ def _deserialize_metrics(rows: list[dict[str, Any]]) -> list[UniversalTrainingMe
 
 
 def _copy_best_checkpoint(checkpoint_path: str) -> str:
+    return _copy_named_checkpoint(checkpoint_path, "best_by_eval_score.pt")
+
+
+def _copy_named_checkpoint(checkpoint_path: str, filename: str) -> str:
     source = Path(checkpoint_path)
-    target = source.parent / "best_by_eval_score.pt"
+    target = source.parent / filename
     shutil.copy2(source, target)
     return str(target)
 
@@ -864,6 +1605,22 @@ def _serializable_training_config(config: UniversalTrainingConfig) -> dict[str, 
         "heads": config.heads,
         "max_rank": config.max_rank,
         "max_board_extent": config.max_board_extent,
+        "line_features": config.line_features,
+        "input_layer_norm": config.input_layer_norm,
+        "rank_adapters": config.rank_adapters,
+        "rank_head_adapters": config.rank_head_adapters,
+        "adapter_size": config.adapter_size,
+        "line_policy_residual": config.line_policy_residual,
+        "root_dirichlet_alpha": config.root_dirichlet_alpha,
+        "root_exploration_fraction": config.root_exploration_fraction,
+        "root_temperature": config.root_temperature,
+        "root_temperature_move_cutoff": config.root_temperature_move_cutoff,
+        "teacher_replay_path": (
+            None
+            if config.teacher_replay_path is None
+            else str(config.teacher_replay_path)
+        ),
+        "teacher_batch_fraction": config.teacher_batch_fraction,
         "seed": config.seed,
         "device": config.device,
         "checkpoint_dir": (
@@ -875,6 +1632,9 @@ def _serializable_training_config(config: UniversalTrainingConfig) -> dict[str, 
             if config.resume_from_checkpoint is None
             else str(config.resume_from_checkpoint)
         ),
+        "reset_optimizer_on_resume": config.reset_optimizer_on_resume,
+        "reset_replay_on_resume": config.reset_replay_on_resume,
+        "reset_rng_on_resume": config.reset_rng_on_resume,
         "metrics_path": (
             None if config.metrics_path is None else str(config.metrics_path)
         ),
@@ -887,6 +1647,10 @@ def _serializable_training_config(config: UniversalTrainingConfig) -> dict[str, 
         "eval_score_floors": config.eval_score_floors,
         "batched_self_play": config.batched_self_play,
         "max_active_self_play_games": config.max_active_self_play_games,
+        "eval_workers": config.eval_workers,
+        "self_play_workers": config.self_play_workers,
+        "central_batched_self_play": config.central_batched_self_play,
+        "balanced_replay": config.balanced_replay,
     }
 
 

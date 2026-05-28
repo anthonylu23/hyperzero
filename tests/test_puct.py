@@ -95,6 +95,55 @@ def test_puct_search_session_runs_stepwise() -> None:
     np.testing.assert_allclose(result.policy.sum(), 1.0)
 
 
+def test_puct_root_dirichlet_noise_changes_root_priors() -> None:
+    config = GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0)
+    state = GameState.new(config)
+    evaluator = FixedEvaluator(np.zeros(config.num_actions))
+    session = PUCTSearchSession(
+        state,
+        PUCTConfig(
+            simulations=2,
+            c_puct=1.5,
+            root_dirichlet_alpha=0.3,
+            root_exploration_fraction=0.5,
+        ),
+        np.random.default_rng(0),
+    )
+
+    leaf = session.select_leaf()
+    session.complete_leaf(leaf, evaluator.evaluate(leaf.state))
+
+    priors = np.array([child.prior for child in session.root.children.values()])
+    np.testing.assert_allclose(priors.sum(), 1.0)
+    assert not np.allclose(priors, np.full(config.num_actions, 1 / config.num_actions))
+
+
+def test_puct_root_temperature_samples_from_adjusted_policy() -> None:
+    config = GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0)
+    state = GameState.new(config)
+    session = PUCTSearchSession(
+        state,
+        PUCTConfig(
+            simulations=1,
+            c_puct=1.5,
+            root_tactical_guard=False,
+            root_temperature=1000.0,
+        ),
+        np.random.default_rng(0),
+    )
+    leaf = session.select_leaf()
+    session.complete_leaf(
+        leaf, FixedEvaluator(np.zeros(config.num_actions)).evaluate(state)
+    )
+    for action, visits in enumerate((8, 1, 1)):
+        session.root.children[action].visit_count = visits
+
+    result = session.result()
+
+    assert result.policy[0] > result.policy[1]
+    assert result.action == 1
+
+
 def test_run_puct_can_prefer_immediate_win_over_uniform_evaluator() -> None:
     config = GameConfig(shape=(3, 3), connect_k=3, gravity_axis=0)
     state = GameState.new(config)

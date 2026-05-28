@@ -1,0 +1,812 @@
+:root {
+  color: #f3f6f8;
+  background: #0f1419;
+  font-family:
+    "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --panel: #161d24;
+  --panel-strong: #1d2630;
+  --line: #32404d;
+  --text-muted: #8d9aa6;
+  --accent: #d8ff65;
+  --x: #f06449;
+  --o: #38bdf8;
+  --warn: #f7d25c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    linear-gradient(120deg, rgba(216, 255, 101, 0.06), transparent 42%),
+    #0f1419;
+}
+
+button {
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.52;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(420px, 1fr) minmax(220px, 280px);
+  gap: 16px;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.app-shell.mode-4d {
+  grid-template-columns: minmax(220px, 270px) minmax(760px, 1fr);
+}
+
+.app-shell.mode-4d > .readout-panel {
+  display: none;
+}
+
+.control-panel,
+.readout-panel {
+  align-content: start;
+  background: color-mix(in srgb, var(--panel) 92%, black);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+
+.brand-lockup {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.brand-mark {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 8px;
+  color: #11170f;
+  display: grid;
+  height: 38px;
+  justify-items: center;
+  width: 38px;
+}
+
+h1 {
+  font-family: "Optima", "Avenir Next", sans-serif;
+  font-size: 24px;
+  letter-spacing: 0;
+  line-height: 1;
+  margin: 0;
+}
+
+p {
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.brand-lockup p {
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.control-group {
+  display: grid;
+  gap: 8px;
+}
+
+.control-label,
+.eyebrow {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.segmented {
+  background: #0f151b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 3px;
+}
+
+.segmented.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.segmented button,
+.slice-rail button {
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.segmented button.selected,
+.slice-rail button.selected {
+  background: var(--panel-strong);
+  color: #f8fbff;
+  outline: 1px solid #50616f;
+}
+
+.primary-action {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 8px;
+  color: #11170f;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 14px;
+}
+
+.board-workspace {
+  display: grid;
+  gap: 12px;
+  grid-template-rows: auto minmax(420px, 1fr) auto;
+  min-width: 0;
+}
+
+.status-strip {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 70px;
+  padding: 12px 16px;
+}
+
+.status-strip strong {
+  display: block;
+  font-family: "Optima", "Avenir Next", sans-serif;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin-top: 2px;
+}
+
+.status-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.status-metrics span {
+  background: #0f151b;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.canvas-shell {
+  background: #10151b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 420px;
+  overflow: hidden;
+  position: relative;
+}
+
+.cube4d-shell {
+  align-items: stretch;
+  background: #10151b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 270px);
+  min-height: 560px;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.cube4d-stage {
+  background:
+    linear-gradient(180deg, rgba(216, 255, 101, 0.04), transparent 34%),
+    #0f151b;
+  border: 1px solid #243240;
+  border-radius: 8px;
+  height: clamp(500px, calc(100vh - 300px), 560px);
+  min-height: 500px;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.cube4d-stage canvas {
+  display: block;
+}
+
+.cube4d-overlay {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  left: 12px;
+  pointer-events: none;
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 3;
+}
+
+.cube4d-overlay span:last-child,
+.cube4d-readout {
+  background: rgba(15, 21, 27, 0.86);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 8px;
+  color: #eaf5c2;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+}
+
+.cube4d-inspector {
+  align-content: start;
+  background: color-mix(in srgb, var(--panel) 84%, black);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.cube4d-panel-block {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 9px;
+  padding-bottom: 14px;
+}
+
+.cube4d-panel-block:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.cube4d-panel-block h2 {
+  font-family: "Optima", "Avenir Next", sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.tensor-shell {
+  align-items: start;
+  background: #10151b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(520px, 1fr) minmax(250px, 300px);
+  min-height: 620px;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.tensor-map {
+  align-content: start;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tensor-map-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 34px;
+}
+
+.tensor-map-header span:last-child,
+.tensor-readout {
+  background: rgba(15, 21, 27, 0.86);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 8px;
+  color: #eaf5c2;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  padding: 8px 10px;
+}
+
+.tensor-scroll {
+  align-self: start;
+  overflow: auto;
+  padding-bottom: 4px;
+}
+
+.tensor-axis-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin: 0 0 5px 34px;
+  text-transform: uppercase;
+}
+
+.tensor-grid {
+  --tensor-tile-size: 118px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 28px repeat(4, var(--tensor-tile-size));
+  grid-template-rows: 22px repeat(4, var(--tensor-tile-size));
+  width: max-content;
+}
+
+.tensor-corner,
+.tensor-w-label,
+.tensor-z-label {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  justify-content: center;
+}
+
+.tensor-z-label {
+  justify-content: flex-start;
+}
+
+.tensor-tile {
+  background: #121920;
+  border: 1px solid #2b3844;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.tensor-tile.active {
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--line));
+  box-shadow: inset 0 0 0 1px rgba(216, 255, 101, 0.16);
+}
+
+.tensor-mini-board {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  height: 100%;
+  width: 100%;
+}
+
+.tensor-cell {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+  position: relative;
+}
+
+.tensor-cell:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.tensor-cell::before {
+  background: rgba(44, 56, 68, 0.68);
+  border: 1.5px solid rgba(150, 169, 184, 0.72);
+  border-radius: 999px;
+  content: "";
+  display: block;
+  height: 76%;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+  width: 76%;
+}
+
+.tensor-cell.active-column::before {
+  background: rgba(216, 255, 101, 0.2);
+  border-color: rgba(216, 255, 101, 0.9);
+  box-shadow: 0 0 0 3px rgba(216, 255, 101, 0.08);
+  transform: scale(1.08);
+}
+
+.tensor-cell.related-column::before {
+  background: rgba(216, 255, 101, 0.09);
+  border-color: rgba(216, 255, 101, 0.42);
+}
+
+.tensor-cell.human::before {
+  background: radial-gradient(circle at 35% 30%, #ff9f76, var(--x) 64%);
+  border-color: #ffb088;
+  box-shadow: inset 0 -4px 8px rgba(62, 10, 2, 0.42);
+}
+
+.tensor-cell.agent::before {
+  background: radial-gradient(circle at 35% 30%, #a5f3fc, var(--o) 64%);
+  border-color: #a5f3fc;
+  box-shadow: inset 0 -4px 8px rgba(3, 37, 56, 0.42);
+}
+
+.tensor-cell.last::before {
+  background: radial-gradient(circle at 35% 30%, #fff7a3, var(--warn) 64%);
+  border-color: #fff3a1;
+  box-shadow: 0 0 0 3px rgba(247, 210, 92, 0.16);
+}
+
+.tensor-cell.preview::after {
+  background: rgba(216, 255, 101, 0.44);
+  border: 1px solid rgba(235, 255, 170, 0.88);
+  border-radius: 999px;
+  box-shadow: 0 0 18px rgba(216, 255, 101, 0.28);
+  content: "";
+  height: 62%;
+  left: 19%;
+  position: absolute;
+  top: 19%;
+  width: 62%;
+}
+
+.tensor-inspector {
+  align-content: start;
+  background: color-mix(in srgb, var(--panel) 84%, black);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  min-width: 0;
+}
+
+.tensor-panel-block {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 9px;
+  padding-bottom: 14px;
+}
+
+.tensor-panel-block:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.tensor-panel-block h2 {
+  font-family: "Optima", "Avenir Next", sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.focus-slice {
+  background: #111820;
+  border: 1px solid #2b3844;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.focus-grid {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: 28px repeat(4, 1fr);
+  grid-template-rows: repeat(4, 43px) 18px;
+}
+
+.focus-y-label,
+.focus-x-label {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  justify-content: center;
+}
+
+.tensor-cell.large::before {
+  height: 82%;
+  width: 82%;
+}
+
+.tensor-legend {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tensor-legend span {
+  align-items: center;
+  color: #dbe5ed;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 7px;
+}
+
+.legend-dot {
+  border-radius: 999px;
+  display: inline-block;
+  height: 13px;
+  width: 13px;
+}
+
+.legend-dot.human {
+  background: var(--x);
+}
+
+.legend-dot.agent {
+  background: var(--o);
+}
+
+.legend-dot.last {
+  background: var(--warn);
+}
+
+.legend-dot.preview {
+  background: var(--accent);
+  opacity: 0.68;
+}
+
+.canvas-shell.loading {
+  align-items: center;
+  color: var(--text-muted);
+  display: grid;
+  justify-items: center;
+}
+
+.slice-rail {
+  display: flex;
+  gap: 6px;
+  left: 12px;
+  position: absolute;
+  top: 52px;
+  z-index: 3;
+}
+
+.slice-rail button {
+  background: rgba(15, 21, 27, 0.84);
+  border: 1px solid var(--line);
+}
+
+.hover-readout {
+  background: rgba(15, 21, 27, 0.88);
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--line));
+  border-radius: 8px;
+  color: #eaf5c2;
+  font-size: 12px;
+  font-weight: 800;
+  left: 12px;
+  letter-spacing: 0.02em;
+  min-width: 104px;
+  padding: 8px 10px;
+  position: absolute;
+  top: 12px;
+  z-index: 3;
+}
+
+.move-dock {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 8px;
+  min-height: 58px;
+  overflow-x: auto;
+  padding: 10px;
+}
+
+.move-dock button {
+  align-items: center;
+  background: #0f151b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #e9eff4;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 13px;
+  gap: 6px;
+  min-width: 42px;
+  padding: 8px 10px;
+}
+
+.move-dock button:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.move-dock button.hovered {
+  background: color-mix(in srgb, var(--accent) 14%, #0f151b);
+  border-color: var(--accent);
+  color: #f7ffd4;
+}
+
+.readout-block {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  padding-bottom: 16px;
+}
+
+.readout-block:last-child {
+  border-bottom: 0;
+}
+
+.score-row,
+.state-light {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+}
+
+.piece {
+  align-items: center;
+  border-radius: 999px;
+  color: #111;
+  display: inline-flex;
+  font-weight: 900;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.piece.x {
+  background: var(--x);
+}
+
+.piece.o {
+  background: var(--o);
+}
+
+dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+dl div {
+  display: flex;
+  justify-content: space-between;
+}
+
+dt {
+  color: var(--text-muted);
+}
+
+dd {
+  margin: 0;
+}
+
+.quiet {
+  font-size: 13px;
+}
+
+.state-light {
+  background: #0f151b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #f8fbff;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.error-box {
+  background: rgba(240, 100, 73, 0.12);
+  border: 1px solid rgba(240, 100, 73, 0.5);
+  border-radius: 8px;
+  color: #ffd2c9;
+  line-height: 1.4;
+  padding: 12px;
+}
+
+@media (max-width: 1080px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell.mode-4d {
+    grid-template-columns: 1fr;
+  }
+
+  .control-panel,
+  .readout-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell.mode-4d > .readout-panel {
+    display: none;
+  }
+
+  .tensor-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .cube4d-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .app-shell {
+    padding: 10px;
+  }
+
+  .control-panel,
+  .readout-panel,
+  .status-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .status-strip {
+    align-items: flex-start;
+    display: grid;
+    gap: 10px;
+  }
+
+  .status-strip strong {
+    font-size: 23px;
+  }
+
+  .board-workspace {
+    grid-template-rows: auto minmax(360px, 62vh) auto;
+  }
+
+  .app-shell.mode-4d .board-workspace {
+    grid-template-rows: auto auto;
+  }
+
+  .tensor-shell {
+    min-height: 0;
+  }
+
+  .cube4d-shell {
+    min-height: 0;
+  }
+
+  .cube4d-stage {
+    height: 440px;
+    min-height: 420px;
+  }
+
+  .cube4d-overlay {
+    align-items: flex-start;
+    display: grid;
+  }
+
+  .tensor-grid {
+    --tensor-tile-size: 112px;
+  }
+
+  .tensor-map-header {
+    align-items: flex-start;
+    display: grid;
+  }
+
+  .tensor-legend {
+    grid-template-columns: 1fr;
+  }
+}

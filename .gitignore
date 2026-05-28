@@ -21,3 +21,8 @@ data/replay/
 .idea/
 .vscode/
 
+# Frontend
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+apps/web/*.tsbuildinfo

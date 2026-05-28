@@ -1,0 +1,30 @@
+[
+  {
+    "config_id": "2d_6x7_k4",
+    "shape": [6, 7],
+    "connect_k": 4,
+    "gravity_axis": 0,
+    "games": 32
+  },
+  {
+    "config_id": "2d_4x4_k3",
+    "shape": [4, 4],
+    "connect_k": 3,
+    "gravity_axis": 0,
+    "games": 8
+  },
+  {
+    "config_id": "3d_4x4x4_k4",
+    "shape": [4, 4, 4],
+    "connect_k": 4,
+    "gravity_axis": 0,
+    "games": 16
+  },
+  {
+    "config_id": "4d_4x4x4x4_k4",
+    "shape": [4, 4, 4, 4],
+    "connect_k": 4,
+    "gravity_axis": 0,
+    "games": 32
+  }
+]

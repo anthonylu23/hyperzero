@@ -8,7 +8,9 @@ from dataclasses import asdict, dataclass, field
 
 from hyperzero.game import GameState, InvalidActionError, TerminalStateError
 from hyperzero.server.agent_service import AgentMoveResult, AgentService
-from hyperzero.server.modes import ModeSpec, get_mode
+from hyperzero.server.modes import ModeSpec, build_mode_spec, get_mode
+
+DEFAULT_MODE_ID = "2d_6x7_k4"
 
 PLAYER_BY_MARK = {"X": 1, "O": -1}
 MARK_BY_PLAYER = {1: "X", -1: "O", 0: "Draw", None: None}
@@ -145,11 +147,19 @@ class SessionManager:
     def create_game(
         self,
         *,
-        mode_id: str,
+        mode_id: str | None = None,
+        shape: tuple[int, ...] | list[int] | None = None,
+        connect_k: int | None = None,
+        gravity_axis: int = 0,
         human_mark: str,
         difficulty: str,
     ) -> GameSession:
-        mode = get_mode(mode_id)
+        if shape is not None:
+            if connect_k is None:
+                raise ValueError("connect_k is required when shape is provided")
+            mode = build_mode_spec(tuple(shape), connect_k, gravity_axis)
+        else:
+            mode = get_mode(mode_id or DEFAULT_MODE_ID)
         human_player = player_from_mark(human_mark)
         game = GameSession(
             game_id=uuid.uuid4().hex,

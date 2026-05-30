@@ -6,6 +6,12 @@ from dataclasses import dataclass
 
 from hyperzero.game import GameConfig
 
+# Mirror the universal encoder defaults (UniversalEncoderConfig in
+# hyperzero/universal/encoding.py). Configs beyond these limits cannot be
+# encoded by the trained model, so reject them before creating a game.
+MAX_RANK = 4
+MAX_BOARD_EXTENT = 8
+
 
 @dataclass(frozen=True, slots=True)
 class ModeSpec:
@@ -69,3 +75,39 @@ def get_mode(mode_id: str) -> ModeSpec:
     except KeyError as exc:
         known = ", ".join(sorted(DEMO_MODES))
         raise ValueError(f"unknown mode {mode_id!r}; expected one of {known}") from exc
+
+
+def build_mode_spec(
+    shape: tuple[int, ...],
+    connect_k: int,
+    gravity_axis: int = 0,
+) -> ModeSpec:
+    """Build an ad-hoc mode from an arbitrary shape and connect-k.
+
+    Validates against the universal encoder limits, then defers the remaining
+    geometry checks (connect_k <= max(shape), positivity, gravity-axis range)
+    to GameConfig. Raises ValueError on any invalid configuration.
+    """
+    shape = tuple(int(size) for size in shape)
+    connect_k = int(connect_k)
+    rank = len(shape)
+    if not 1 <= rank <= MAX_RANK:
+        raise ValueError(f"board rank {rank} must be between 1 and {MAX_RANK}")
+    if shape and max(shape) > MAX_BOARD_EXTENT:
+        raise ValueError(
+            f"board extent {max(shape)} exceeds max_board_extent {MAX_BOARD_EXTENT}"
+        )
+    if connect_k > MAX_BOARD_EXTENT:
+        raise ValueError(
+            f"connect_k {connect_k} exceeds max_board_extent {MAX_BOARD_EXTENT}"
+        )
+
+    game_config = GameConfig(shape=shape, connect_k=connect_k, gravity_axis=gravity_axis)
+    extent_label = "×".join(str(size) for size in shape)
+    return ModeSpec(
+        id=f"{rank}d_{'x'.join(str(size) for size in shape)}_k{connect_k}",
+        label=f"{rank}D {extent_label} (k={connect_k})",
+        short_label=f"{rank}D",
+        description=f"Custom {rank}D board {extent_label} with connect-{connect_k}.",
+        game_config=game_config,
+    )

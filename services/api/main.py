@@ -15,7 +15,10 @@ from hyperzero.server.sessions import SessionManager, TurnError, error_name
 
 
 class CreateGameRequest(BaseModel):
-    mode_id: str = Field(default="2d_6x7_k4")
+    mode_id: str | None = Field(default="2d_6x7_k4")
+    shape: list[int] | None = None
+    connect_k: int | None = None
+    gravity_axis: int = 0
     human_mark: Literal["X", "O"] = "X"
     difficulty: Literal["quick", "normal", "strong"] = "normal"
 
@@ -25,12 +28,14 @@ class MoveRequest(BaseModel):
 
 
 app = FastAPI(title="HyperZero Local Demo API")
+LOCAL_DEV_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1|\[::1\]):\d+$"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
+    allow_origin_regex=LOCAL_DEV_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,6 +77,9 @@ def create_game(request: CreateGameRequest) -> dict[str, object]:
     try:
         game = manager.create_game(
             mode_id=request.mode_id,
+            shape=request.shape,
+            connect_k=request.connect_k,
+            gravity_axis=request.gravity_axis,
             human_mark=request.human_mark,
             difficulty=request.difficulty,
         )

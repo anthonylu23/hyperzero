@@ -9,7 +9,6 @@ import type {
   AgentMovePayload,
   CellInfo,
   GameSnapshot,
-  LastMove,
 } from "../lib/types";
 
 interface BoardSceneProps {
@@ -17,6 +16,7 @@ interface BoardSceneProps {
   agent: AgentMovePayload | null;
   busy: boolean;
   hoveredAction: number | null;
+  theme: "dark" | "light";
   onAction: (action: number) => void;
   onHoverAction: (action: number | null) => void;
 }
@@ -27,26 +27,87 @@ interface ActionCoord4D {
   w: number;
 }
 
-const X_COLOR = "#f06449";
-const O_COLOR = "#38bdf8";
-const EMPTY_COLOR = "#3a4a58";
-const EMPTY_EDGE_COLOR = "#a7bac8";
-const LAST_COLOR = "#f7d25c";
-const GHOST_COLOR = "#d8ff65";
+interface BoardPalette {
+  agent: string;
+  empty: string;
+  emptyEdge: string;
+  frame: string;
+  ghost: string;
+  ghostEmissive: string;
+  human: string;
+  last: string;
+}
 
-const CUBE_SPACING = 3.2;
-const CUBE_SIZE = 2.85;
+const BOARD_PALETTES: Record<"dark" | "light", BoardPalette> = {
+  dark: {
+    agent: "#e03535",
+    empty: "#4b5355",
+    emptyEdge: "#c8c1b7",
+    frame: "#667071",
+    ghost: "#00b8ad",
+    ghostEmissive: "#123d3b",
+    human: "#00b8ad",
+    last: "#f0a322",
+  },
+  light: {
+    agent: "#6f675f",
+    empty: "#d0c6b8",
+    emptyEdge: "#776f66",
+    frame: "#9c9185",
+    ghost: "#e99a19",
+    ghostEmissive: "#5c3a0a",
+    human: "#e99a19",
+    last: "#00b8ad",
+  },
+};
+
 const XZ_SLOT_SPACING = 0.58;
 const Y_SLOT_SPACING = 0.82;
+const CUBE_MARGIN = 1.1;
+const CUBE_GAP = 0.35;
+
+interface CubeLayout {
+  // Per-axis cell counts in coord order [y (gravity), x, z, w].
+  counts: [number, number, number, number];
+  // Per-axis center offsets used to recentre coordinates around the origin.
+  centers: [number, number, number, number];
+  // Wireframe frame extents for one cube.
+  frameW: number;
+  frameH: number;
+  frameD: number;
+  // Distance between adjacent cube centers along the w (row) axis.
+  cubeSpacing: number;
+}
+
+function makeCubeLayout(shape: number[]): CubeLayout {
+  const y = shape[0] ?? 1;
+  const x = shape[1] ?? 1;
+  const z = shape[2] ?? 1;
+  const w = shape[3] ?? 1;
+  const frameW = XZ_SLOT_SPACING * (x - 1) + CUBE_MARGIN;
+  const frameH = Y_SLOT_SPACING * (y - 1) + CUBE_MARGIN;
+  const frameD = XZ_SLOT_SPACING * (z - 1) + CUBE_MARGIN;
+  return {
+    counts: [y, x, z, w],
+    centers: [(y - 1) / 2, (x - 1) / 2, (z - 1) / 2, (w - 1) / 2],
+    frameW,
+    frameH,
+    frameD,
+    cubeSpacing: frameW + CUBE_GAP,
+  };
+}
 
 export function BoardScene({
   game,
   agent,
   busy,
   hoveredAction,
+  theme,
   onAction,
   onHoverAction,
 }: BoardSceneProps) {
+  const palette = BOARD_PALETTES[theme];
+
   if (!game) {
     return (
       <div className="canvas-shell loading">
@@ -62,6 +123,7 @@ export function BoardScene({
         busy={busy}
         game={game}
         hoveredAction={hoveredAction}
+        palette={palette}
         onAction={onAction}
         onHoverAction={onHoverAction}
       />
@@ -73,6 +135,7 @@ export function BoardScene({
       busy={busy}
       game={game}
       hoveredAction={hoveredAction}
+      palette={palette}
       onAction={onAction}
       onHoverAction={onHoverAction}
     />
@@ -83,29 +146,28 @@ function SpatialBoard({
   game,
   busy,
   hoveredAction,
+  palette,
   onAction,
   onHoverAction,
-}: Omit<BoardSceneProps, "agent" | "game"> & { game: GameSnapshot }) {
+}: Omit<BoardSceneProps, "agent" | "game" | "theme"> & {
+  game: GameSnapshot;
+  palette: BoardPalette;
+}) {
   const visibleActions = game.actions.filter(
     (action) => action.legal && action.next_cell,
   );
   const cameraPosition = cameraFor(game.mode.dimensions);
   const lastMoveIndex = game.state.last_move?.cell_index ?? -1;
   const hoveredActionInfo = actionById(game, hoveredAction);
-  const hoveredLabel = hoveredActionInfo
-    ? hoveredActionInfo.coord.length === 0
-      ? `Column ${hoveredActionInfo.action}`
-      : `Column ${hoveredActionInfo.coord.join(",")}`
-    : "Hover a column";
 
   return (
-    <div className="canvas-shell" data-testid="board-shell">
-      <div className="hover-readout" data-testid="hover-readout">
-        {hoveredLabel}
-      </div>
-
-      <Canvas camera={{ position: cameraPosition, fov: 42 }}>
-        <color attach="background" args={["#10151b"]} />
+    <div
+      className="canvas-shell"
+      data-board-shape={game.mode.shape.join("x")}
+      data-connect-k={game.mode.connect_k}
+      data-testid="board-shell"
+    >
+      <Canvas camera={{ position: cameraPosition, fov: 42 }} gl={{ alpha: true }}>
         <ambientLight intensity={0.65} />
         <directionalLight intensity={1.8} position={[4, 7, 5]} />
         <directionalLight intensity={0.45} position={[-5, 4, -4]} />
@@ -113,6 +175,7 @@ function SpatialBoard({
           cells={game.cells}
           game={game}
           hoveredAction={hoveredActionInfo}
+          palette={palette}
         />
         {game.cells.map((cell) => (
           <Piece
@@ -120,6 +183,7 @@ function SpatialBoard({
             game={game}
             isLast={cell.index === lastMoveIndex}
             key={cell.index}
+            palette={palette}
           />
         ))}
         {visibleActions.map((action) => (
@@ -129,6 +193,7 @@ function SpatialBoard({
             game={game}
             hovered={hoveredAction === action.action}
             key={action.action}
+            palette={palette}
             onAction={onAction}
             onHoverAction={onHoverAction}
           />
@@ -141,48 +206,44 @@ function SpatialBoard({
 
 function CubeRow4DBoard({
   game,
-  agent,
   busy,
   hoveredAction,
+  palette,
   onAction,
   onHoverAction,
-}: BoardSceneProps & { game: GameSnapshot }) {
+}: Omit<BoardSceneProps, "theme"> & {
+  game: GameSnapshot;
+  palette: BoardPalette;
+}) {
   const hovered = actionById(game, hoveredAction);
   const hoveredCoord = actionCoord4D(hovered);
-  const focusAction = hovered ?? actionFromLastMove(game) ?? firstLegalAction(game);
-  const focus = actionCoord4D(focusAction) ?? { x: 0, z: 0, w: 0 };
-  const hoverText =
-    hovered && hoveredCoord && hovered.next_cell
-      ? `Hover: action (x=${hoveredCoord.x}, z=${hoveredCoord.z}, w=${hoveredCoord.w}), lands at y=${hovered.next_cell[0]}`
-      : game.state.last_move
-        ? moveReadout(game, game.state.last_move)
-        : "Hover: choose a cube column";
-  const lastMoveText = game.state.last_move
-    ? moveReadout(game, game.state.last_move)
-    : "No moves yet";
+  const layout = makeCubeLayout(game.mode.shape);
 
   return (
-    <div className="cube4d-shell" data-testid="board-shell">
+    <div
+      className="cube4d-shell"
+      data-board-shape={game.mode.shape.join("x")}
+      data-connect-k={game.mode.connect_k}
+      data-testid="board-shell"
+    >
       <section className="cube4d-stage" aria-label="4D cube row">
-        <div className="cube4d-overlay">
-          <span className="control-label">w axis</span>
-          <span data-testid="cube4d-hover-readout">{hoverText}</span>
-        </div>
         <Canvas
           camera={{ position: [4.8, 2.2, 10], zoom: 44 }}
+          gl={{ alpha: true }}
           orthographic
           onCreated={({ camera }) => camera.lookAt(0, 0, 0)}
         >
-          <color attach="background" args={["#10151b"]} />
           <ambientLight intensity={0.7} />
           <directionalLight intensity={1.9} position={[3, 7, 6]} />
           <directionalLight intensity={0.5} position={[-6, 4, -4]} />
-          <CubeCameraFit />
+          <CubeCameraFit layout={layout} />
           <CubeRowScene
             disabled={busy || !game.is_human_turn}
             game={game}
             hovered={hovered}
             hoveredCoord={hoveredCoord}
+            layout={layout}
+            palette={palette}
             onAction={onAction}
             onHoverAction={onHoverAction}
           />
@@ -195,77 +256,20 @@ function CubeRow4DBoard({
           />
         </Canvas>
       </section>
-
-      <aside className="cube4d-inspector" aria-label="4D move details">
-        <section className="cube4d-panel-block">
-          <span className="control-label">Move details</span>
-          <div className="cube4d-readout" data-testid="cube4d-readout">
-            {hoverText}
-          </div>
-        </section>
-
-        <section className="cube4d-panel-block">
-          <span className="control-label">Active cube</span>
-          <h2>w={focus.w}</h2>
-          <p>
-            x={focus.x}, z={focus.z}
-          </p>
-        </section>
-
-        <section className="cube4d-panel-block">
-          <span className="control-label">Search readout</span>
-          <dl>
-            <div>
-              <dt>Action</dt>
-              <dd>{agent?.action ?? "-"}</dd>
-            </div>
-            <div>
-              <dt>Value</dt>
-              <dd>{agent ? agent.value.toFixed(3) : "-"}</dd>
-            </div>
-            <div>
-              <dt>Sims</dt>
-              <dd>{agent?.simulations ?? "-"}</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="cube4d-panel-block">
-          <span className="control-label">Last move</span>
-          <div className="cube4d-readout">{lastMoveText}</div>
-        </section>
-
-        <section className="cube4d-panel-block">
-          <span className="control-label">Legend</span>
-          <div className="tensor-legend">
-            <span>
-              <i className="legend-dot human" /> Human
-            </span>
-            <span>
-              <i className="legend-dot agent" /> Agent
-            </span>
-            <span>
-              <i className="legend-dot last" /> Last
-            </span>
-            <span>
-              <i className="legend-dot preview" /> Hover
-            </span>
-          </div>
-        </section>
-      </aside>
     </div>
   );
 }
 
-function CubeCameraFit() {
+function CubeCameraFit({ layout }: { layout: CubeLayout }) {
   const { camera, size } = useThree();
+  const rowWidth = layout.counts[3] * layout.cubeSpacing;
 
   React.useEffect(() => {
     const orthographicCamera = camera as OrthographicCamera;
-    orthographicCamera.zoom = Math.max(30, Math.min(50, size.width / 13.8));
+    orthographicCamera.zoom = Math.max(18, Math.min(50, size.width / (rowWidth * 1.08)));
     orthographicCamera.lookAt(0, 0, 0);
     orthographicCamera.updateProjectionMatrix();
-  }, [camera, size.width]);
+  }, [camera, size.width, rowWidth]);
 
   return null;
 }
@@ -274,34 +278,39 @@ function CubeRowScene({
   game,
   hovered,
   hoveredCoord,
+  layout,
   disabled,
+  palette,
   onAction,
   onHoverAction,
 }: {
   game: GameSnapshot;
   hovered: ActionInfo | null;
   hoveredCoord: ActionCoord4D | null;
+  layout: CubeLayout;
   disabled: boolean;
+  palette: BoardPalette;
   onAction: (action: number) => void;
   onHoverAction: (action: number | null) => void;
 }) {
   const lastMoveIndex = game.state.last_move?.cell_index ?? -1;
   const actions = game.actions.filter((action) => action.legal && action.next_cell);
+  const cubeIndices = Array.from({ length: layout.counts[3] }, (_, index) => index);
 
   return (
     <group>
-      {[0, 1, 2, 3].map((w) => (
-        <group key={`cube-${w}`} position={[cubeOffset(w), 0, 0]}>
+      {cubeIndices.map((w) => (
+        <group key={`cube-${w}`} position={[cubeOffset(w, layout), 0, 0]}>
           <Text
             anchorX="center"
             anchorY="middle"
-            color="#d8ff65"
+            color={palette.ghost}
             fontSize={0.26}
-            position={[0, CUBE_SIZE / 2 + 0.45, 0]}
+            position={[0, layout.frameH / 2 + 0.45, 0]}
           >
             w{w}
           </Text>
-          <CubeFrame active={hoveredCoord?.w === w} />
+          <CubeFrame active={hoveredCoord?.w === w} layout={layout} palette={palette} />
         </group>
       ))}
 
@@ -312,6 +321,8 @@ function CubeRowScene({
           highlighted={cellHighlighted(cell, hoveredCoord)}
           isLast={cell.index === lastMoveIndex}
           key={cell.index}
+          layout={layout}
+          palette={palette}
         />
       ))}
 
@@ -321,6 +332,8 @@ function CubeRowScene({
           disabled={disabled}
           hovered={hovered?.action === action.action}
           key={action.action}
+          layout={layout}
+          palette={palette}
           related={columnRelated(action, hoveredCoord)}
           onAction={onAction}
           onHoverAction={onHoverAction}
@@ -330,12 +343,20 @@ function CubeRowScene({
   );
 }
 
-function CubeFrame({ active }: { active: boolean }) {
+function CubeFrame({
+  active,
+  layout,
+  palette,
+}: {
+  active: boolean;
+  layout: CubeLayout;
+  palette: BoardPalette;
+}) {
   return (
     <mesh>
-      <boxGeometry args={[CUBE_SIZE, CUBE_SIZE, CUBE_SIZE]} />
+      <boxGeometry args={[layout.frameW, layout.frameH, layout.frameD]} />
       <meshBasicMaterial
-        color={active ? GHOST_COLOR : "#536472"}
+        color={active ? palette.ghost : palette.frame}
         opacity={active ? 0.48 : 0.34}
         transparent
         wireframe
@@ -349,35 +370,38 @@ function CubeSlot({
   game,
   highlighted,
   isLast,
+  layout,
+  palette,
 }: {
   cell: CellInfo;
   game: GameSnapshot;
   highlighted: boolean;
   isLast: boolean;
+  layout: CubeLayout;
+  palette: BoardPalette;
 }) {
   const occupied = cell.value !== 0;
-  const color = isLast
-    ? LAST_COLOR
-    : cell.value === game.human_player
-      ? X_COLOR
+  const color =
+    cell.value === game.human_player
+      ? palette.human
       : cell.value === game.agent_player
-        ? O_COLOR
+        ? palette.agent
         : highlighted
-          ? GHOST_COLOR
-          : EMPTY_COLOR;
-  const opacity = occupied || isLast ? 1 : highlighted ? 0.5 : 0.38;
-  const edgeOpacity = occupied || isLast ? 0.94 : highlighted ? 0.92 : 0.78;
+          ? palette.ghost
+          : palette.empty;
+  const opacity = occupied || isLast ? 1 : highlighted ? 0.32 : 0.22;
+  const edgeOpacity = occupied || isLast ? 0.94 : highlighted ? 0.65 : 0.52;
   const radius = occupied || isLast ? 0.15 : highlighted ? 0.17 : 0.15;
 
   return (
-    <group position={cubeCoordPosition(cell.coord)}>
+    <group position={cubeCoordPosition(cell.coord, layout)}>
       <mesh>
         <sphereGeometry args={[radius, 18, 18]} />
         <meshStandardMaterial
           color={color}
           depthTest={occupied || isLast}
           depthWrite={occupied || isLast}
-          emissive={highlighted ? GHOST_COLOR : "#1f303c"}
+          emissive={highlighted ? palette.ghost : palette.ghostEmissive}
           emissiveIntensity={highlighted ? 0.16 : occupied ? 0 : 0.08}
           metalness={occupied ? 0.18 : 0}
           opacity={opacity}
@@ -388,7 +412,7 @@ function CubeSlot({
       <mesh>
         <sphereGeometry args={[radius + 0.011, 12, 12]} />
         <meshBasicMaterial
-          color={highlighted ? GHOST_COLOR : EMPTY_EDGE_COLOR}
+          color={isLast ? palette.last : highlighted ? palette.ghost : palette.emptyEdge}
           depthTest={false}
           depthWrite={false}
           opacity={edgeOpacity}
@@ -405,6 +429,8 @@ function ColumnTarget({
   hovered,
   related,
   disabled,
+  layout,
+  palette,
   onAction,
   onHoverAction,
 }: {
@@ -412,6 +438,8 @@ function ColumnTarget({
   hovered: boolean;
   related: boolean;
   disabled: boolean;
+  layout: CubeLayout;
+  palette: BoardPalette;
   onAction: (action: number) => void;
   onHoverAction: (action: number | null) => void;
 }) {
@@ -419,8 +447,8 @@ function ColumnTarget({
   if (!coord || !action.next_cell) {
     return null;
   }
-  const position = cubeActionPosition(coord);
-  const previewPosition = cubeCoordPosition(action.next_cell);
+  const position = cubeActionPosition(coord, layout);
+  const previewPosition = cubeCoordPosition(action.next_cell, layout);
   const hoverAction = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
     onHoverAction(action.action);
@@ -440,9 +468,9 @@ function ColumnTarget({
         onPointerOver={hoverAction}
         position={position}
       >
-        <boxGeometry args={[0.42, CUBE_SIZE, 0.42]} />
+        <boxGeometry args={[0.42, layout.frameH, 0.42]} />
         <meshBasicMaterial
-          color={GHOST_COLOR}
+          color={palette.ghost}
           opacity={hovered ? 0.16 : related ? 0.055 : 0.002}
           transparent
         />
@@ -451,8 +479,8 @@ function ColumnTarget({
         <mesh position={previewPosition}>
           <sphereGeometry args={[0.24, 24, 24]} />
           <meshStandardMaterial
-            color={GHOST_COLOR}
-            emissive={GHOST_COLOR}
+            color={palette.ghost}
+            emissive={palette.ghost}
             emissiveIntensity={0.34}
             opacity={0.62}
             transparent
@@ -467,10 +495,12 @@ function BoardLattice({
   cells,
   game,
   hoveredAction,
+  palette,
 }: {
   cells: CellInfo[];
   game: GameSnapshot;
   hoveredAction: ActionInfo | null;
+  palette: BoardPalette;
 }) {
   return (
     <group>
@@ -480,6 +510,7 @@ function BoardLattice({
           game={game}
           highlighted={cellInActionColumn(cell, hoveredAction)}
           key={`slot-${cell.index}`}
+          palette={palette}
         />
       ))}
     </group>
@@ -490,14 +521,16 @@ function Slot({
   cell,
   game,
   highlighted,
+  palette,
 }: {
   cell: CellInfo;
   game: GameSnapshot;
   highlighted: boolean;
+  palette: BoardPalette;
 }) {
   const occupied = cell.value !== 0;
-  const opacity = highlighted ? 0.34 : occupied ? 0.12 : 0.25;
-  const edgeOpacity = highlighted ? 0.86 : 0.48;
+  const opacity = highlighted ? 0.20 : occupied ? 0.12 : 0.14;
+  const edgeOpacity = highlighted ? 0.55 : 0.30;
   const radius = highlighted ? 0.36 : 0.31;
 
   return (
@@ -505,8 +538,8 @@ function Slot({
       <mesh>
         <sphereGeometry args={[radius, 24, 24]} />
         <meshStandardMaterial
-          color={highlighted ? GHOST_COLOR : EMPTY_COLOR}
-          emissive={highlighted ? GHOST_COLOR : "#000000"}
+          color={highlighted ? palette.ghost : palette.empty}
+          emissive={highlighted ? palette.ghost : "#000000"}
           emissiveIntensity={highlighted ? 0.1 : 0}
           opacity={opacity}
           roughness={0.62}
@@ -516,7 +549,7 @@ function Slot({
       <mesh>
         <sphereGeometry args={[radius + 0.015, 18, 18]} />
         <meshBasicMaterial
-          color={highlighted ? GHOST_COLOR : EMPTY_EDGE_COLOR}
+          color={highlighted ? palette.ghost : palette.emptyEdge}
           opacity={edgeOpacity}
           transparent
           wireframe
@@ -530,24 +563,35 @@ function Piece({
   cell,
   game,
   isLast,
+  palette,
 }: {
   cell: CellInfo;
   game: GameSnapshot;
   isLast: boolean;
+  palette: BoardPalette;
 }) {
   if (cell.value === 0) {
     return null;
   }
-  const color = cell.value === 1 ? X_COLOR : O_COLOR;
+  const color = cell.value === game.human_player ? palette.human : palette.agent;
   return (
-    <mesh position={coordToPosition(cell.coord, game)}>
-      <sphereGeometry args={[isLast ? 0.38 : 0.34, 32, 32]} />
-      <meshStandardMaterial
-        color={isLast ? LAST_COLOR : color}
-        metalness={0.2}
-        roughness={0.34}
-      />
-    </mesh>
+    <group position={coordToPosition(cell.coord, game)}>
+      <mesh>
+        <sphereGeometry args={[isLast ? 0.38 : 0.34, 32, 32]} />
+        <meshStandardMaterial color={color} metalness={0.2} roughness={0.34} />
+      </mesh>
+      {isLast ? (
+        <mesh>
+          <sphereGeometry args={[0.43, 18, 18]} />
+          <meshBasicMaterial
+            color={palette.last}
+            opacity={0.82}
+            transparent
+            wireframe
+          />
+        </mesh>
+      ) : null}
+    </group>
   );
 }
 
@@ -556,6 +600,7 @@ function ActionGhost({
   disabled,
   game,
   hovered,
+  palette,
   onAction,
   onHoverAction,
 }: {
@@ -563,6 +608,7 @@ function ActionGhost({
   disabled: boolean;
   game: GameSnapshot;
   hovered: boolean;
+  palette: BoardPalette;
   onAction: (action: number) => void;
   onHoverAction: (action: number | null) => void;
 }) {
@@ -588,35 +634,43 @@ function ActionGhost({
     >
       <sphereGeometry args={[hovered ? 0.5 : 0.42, 28, 28]} />
       <meshStandardMaterial
-        color={GHOST_COLOR}
-        emissive={GHOST_COLOR}
-        emissiveIntensity={disabled ? 0.04 : hovered ? 0.32 : 0.18}
-        opacity={disabled ? 0.12 : hovered ? 0.54 : 0.34}
+        color={palette.ghost}
+        emissive={palette.ghost}
+        emissiveIntensity={disabled ? 0.04 : hovered ? 0.18 : 0.10}
+        opacity={disabled ? 0.12 : hovered ? 0.32 : 0.20}
         transparent
       />
     </mesh>
   );
 }
 
-function cubeCoordPosition(coord: number[]): [number, number, number] {
+function cubeCoordPosition(
+  coord: number[],
+  layout: CubeLayout,
+): [number, number, number] {
   const [y, x, z, w] = coord;
+  const [cy, cx, cz] = layout.centers;
   return [
-    cubeOffset(w) + (x - 1.5) * XZ_SLOT_SPACING,
-    (y - 1.5) * Y_SLOT_SPACING,
-    (z - 1.5) * XZ_SLOT_SPACING,
+    cubeOffset(w, layout) + (x - cx) * XZ_SLOT_SPACING,
+    (y - cy) * Y_SLOT_SPACING,
+    (z - cz) * XZ_SLOT_SPACING,
   ];
 }
 
-function cubeActionPosition(coord: ActionCoord4D): [number, number, number] {
+function cubeActionPosition(
+  coord: ActionCoord4D,
+  layout: CubeLayout,
+): [number, number, number] {
+  const [, cx, cz] = layout.centers;
   return [
-    cubeOffset(coord.w) + (coord.x - 1.5) * XZ_SLOT_SPACING,
+    cubeOffset(coord.w, layout) + (coord.x - cx) * XZ_SLOT_SPACING,
     0,
-    (coord.z - 1.5) * XZ_SLOT_SPACING,
+    (coord.z - cz) * XZ_SLOT_SPACING,
   ];
 }
 
-function cubeOffset(w: number) {
-  return (w - 1.5) * CUBE_SPACING;
+function cubeOffset(w: number, layout: CubeLayout) {
+  return (w - layout.centers[3]) * layout.cubeSpacing;
 }
 
 function actionById(game: GameSnapshot, action: number | null) {
@@ -624,18 +678,6 @@ function actionById(game: GameSnapshot, action: number | null) {
     return null;
   }
   return game.actions.find((candidate) => candidate.action === action) ?? null;
-}
-
-function firstLegalAction(game: GameSnapshot) {
-  return game.actions.find((action) => action.legal) ?? null;
-}
-
-function actionFromLastMove(game: GameSnapshot) {
-  const lastMove = game.state.last_move;
-  if (!lastMove) {
-    return null;
-  }
-  return game.actions.find((action) => action.action === lastMove.action) ?? null;
 }
 
 function actionCoord4D(action: ActionInfo | null): ActionCoord4D | null {
@@ -666,13 +708,6 @@ function columnRelated(action: ActionInfo, coord: ActionCoord4D | null) {
     actionCoord.z === coord.z &&
     actionCoord.w !== coord.w
   );
-}
-
-function moveReadout(game: GameSnapshot, move: LastMove) {
-  const [x, z, w] = move.column_coord;
-  const y = move.cell_coord[0];
-  const actor = move.player === game.agent_player ? "Agent" : "Human";
-  return `${actor} played (x=${x}, z=${z}, w=${w}), landed at y=${y}`;
 }
 
 function cellInActionColumn(cell: CellInfo, action: ActionInfo | null) {

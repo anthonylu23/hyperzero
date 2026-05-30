@@ -1,0 +1,119 @@
+.glass-surface {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  transition: opacity 0.26s ease-out;
+}
+
+.glass-surface--static .glass-surface__filter {
+  display: none;
+}
+
+.glass-surface__filter {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  z-index: -1;
+}
+
+.glass-surface__content {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  position: relative;
+  z-index: 1;
+}
+
+.glass-surface--svg {
+  background: hsl(0 0% 0% / var(--glass-frost, 0.1));
+  backdrop-filter: var(--filter-id, url(#glass-filter)) saturate(var(--glass-saturation, 1));
+  -webkit-backdrop-filter: var(--filter-id, url(#glass-filter)) saturate(var(--glass-saturation, 1));
+  box-shadow:
+    0 0 2px 1px rgba(255, 255, 255, 0.3) inset,
+    0 4px 24px rgba(17, 17, 26, 0.12),
+    0 25px 65px rgba(17, 17, 26, 0.15);
+}
+
+:root[data-theme="light"] .glass-surface--svg {
+  background: hsl(0 0% 100% / var(--glass-frost, 0.1));
+  box-shadow:
+    0 0 2px 1px rgba(0, 0, 0, 0.15) inset,
+    0 4px 24px rgba(17, 17, 26, 0.12),
+    0 25px 65px rgba(17, 17, 26, 0.15);
+}
+
+.glass-surface--fallback {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05));
+  backdrop-filter: blur(18px) saturate(1.85) brightness(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.85) brightness(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
+    0 12px 32px rgba(15, 23, 42, 0.35),
+    0 25px 55px rgba(15, 23, 42, 0.25);
+}
+
+.glass-surface--fallback::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.45), transparent 55%);
+  opacity: 0.35;
+  mix-blend-mode: screen;
+  z-index: 0;
+}
+
+:root[data-theme="dark"] .glass-surface--fallback {
+  background: linear-gradient(145deg, rgba(20, 22, 30, 0.55), rgba(255, 255, 255, 0.08));
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+    0 12px 32px rgba(3, 7, 18, 0.7),
+    0 25px 55px rgba(3, 7, 18, 0.4);
+}
+
+:root[data-theme="dark"] .glass-surface--fallback::after {
+  background: linear-gradient(110deg, rgba(255, 255, 255, 0.5), transparent 60%);
+  opacity: 0.4;
+}
+
+@supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  .glass-surface--fallback {
+    background: rgba(255, 255, 255, 0.4);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
+      inset 0 -1px 0 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .glass-surface--fallback::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: inherit;
+    z-index: -1;
+  }
+}
+
+@supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  :root[data-theme="dark"] .glass-surface--fallback {
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  :root[data-theme="dark"] .glass-surface--fallback::before {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+
+.glass-surface:focus-visible {
+  outline: 2px solid hsl(var(--accent));
+  outline-offset: 2px;
+}

@@ -15,7 +15,10 @@ export interface ModesPayload {
 }
 
 export interface CreateGamePayload {
-  mode_id: string;
+  mode_id?: string;
+  shape?: number[];
+  connect_k?: number;
+  gravity_axis?: number;
   human_mark: "X" | "O";
   difficulty: string;
 }

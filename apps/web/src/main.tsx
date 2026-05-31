@@ -16,6 +16,7 @@ const MIN_K = 2;
 const MAX_K = 8;
 const AXIS_LABELS = ["y", "x", "z", "w"];
 const DIMENSIONS = [2, 3, 4] as const;
+const CONFIG_DEBOUNCE_MS = 280;
 
 type Dimensions = (typeof DIMENSIONS)[number];
 type Theme = "dark" | "light";
@@ -48,6 +49,7 @@ function App() {
   const [resultDismissed, setResultDismissed] = React.useState(false);
   const hasAutoStartedRef = React.useRef(false);
   const gameStartRequestRef = React.useRef(0);
+  const configTimerRef = React.useRef<number | null>(null);
   const [moveInFlight, setMoveInFlight] = React.useState(false);
   const [theme, setTheme] = React.useState<Theme>(() => {
     const stored = window.localStorage.getItem("theme");
@@ -59,6 +61,14 @@ function App() {
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem("theme", theme);
   }, [theme]);
+
+  React.useEffect(() => {
+    if (!error) {
+      return;
+    }
+    const timer = window.setTimeout(() => setError(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
 
   const toggleTheme = React.useCallback(() => {
     const update = () =>
@@ -137,6 +147,35 @@ function App() {
     [sizes, k, requestAgentMove],
   );
 
+  const cancelScheduledStart = React.useCallback(() => {
+    if (configTimerRef.current !== null) {
+      window.clearTimeout(configTimerRef.current);
+      configTimerRef.current = null;
+    }
+  }, []);
+
+  // Coalesce rapid stepper clicks into a single game creation.
+  const scheduleStartGame = React.useCallback(
+    (config: BoardConfig) => {
+      cancelScheduledStart();
+      configTimerRef.current = window.setTimeout(() => {
+        configTimerRef.current = null;
+        void startGame(config);
+      }, CONFIG_DEBOUNCE_MS);
+    },
+    [cancelScheduledStart, startGame],
+  );
+
+  const startGameNow = React.useCallback(
+    (config?: BoardConfig) => {
+      cancelScheduledStart();
+      void startGame(config);
+    },
+    [cancelScheduledStart, startGame],
+  );
+
+  React.useEffect(() => cancelScheduledStart, [cancelScheduledStart]);
+
   React.useEffect(() => {
     if (hasAutoStartedRef.current) {
       return;
@@ -174,6 +213,13 @@ function App() {
   const canEditConfig = Boolean(game && game.ply === 0 && !moveInFlight);
   const activeMode = game?.mode;
   const totalVisits = agent?.visits.reduce((sum, value) => sum + value, 0);
+  const turnTone = game?.terminal
+    ? "idle"
+    : game?.is_human_turn
+      ? "human"
+      : game?.is_agent_turn
+        ? "agent"
+        : "idle";
   const turnLabel = game?.terminal
     ? game.winner_mark === "Draw"
       ? "Draw"
@@ -203,9 +249,9 @@ function App() {
       setDims(nextDims);
       setSizes(next.sizes);
       setK(next.k);
-      void startGame(next);
+      startGameNow(next);
     },
-    [canEditConfig, dims, startGame],
+    [canEditConfig, dims, startGameNow],
   );
 
   const handleSizeChange = React.useCallback(
@@ -219,9 +265,9 @@ function App() {
       const nextK = clamp(k, MIN_K, maxKFor(nextSizes));
       setSizes(nextSizes);
       setK(nextK);
-      void startGame({ sizes: nextSizes, k: nextK });
+      scheduleStartGame({ sizes: nextSizes, k: nextK });
     },
-    [canEditConfig, sizes, k, startGame],
+    [canEditConfig, sizes, k, scheduleStartGame],
   );
 
   const handleKChange = React.useCallback(
@@ -231,9 +277,9 @@ function App() {
       }
       const nextK = clamp(k + delta, MIN_K, maxKFor(sizes));
       setK(nextK);
-      void startGame({ sizes, k: nextK });
+      scheduleStartGame({ sizes, k: nextK });
     },
-    [canEditConfig, sizes, k, startGame],
+    [canEditConfig, sizes, k, scheduleStartGame],
   );
 
   return (
@@ -247,7 +293,7 @@ function App() {
         onDimsChange={handleDimsChange}
         onSizeChange={handleSizeChange}
         onKChange={handleKChange}
-        onRestart={() => startGame()}
+        onRestart={() => startGameNow()}
         onToggleTheme={toggleTheme}
         theme={theme}
       />
@@ -265,7 +311,9 @@ function App() {
               onHoverAction={setHoveredAction}
             />
           ) : (
-            <div className="canvas-shell loading">Starting game</div>
+            <div className="canvas-shell loading">
+              <Loader label="Starting game" />
+            </div>
           )}
         </div>
 
@@ -293,7 +341,9 @@ function App() {
               {searchStats.map(([label, value]) => (
                 <span className="stat-pill" key={label}>
                   <b>{label}</b>
-                  <span className="stat-value">{value}</span>
+                  <span className="stat-value" key={value}>
+                    {value}
+                  </span>
                 </span>
               ))}
             </div>
@@ -303,13 +353,15 @@ function App() {
               data-thinking={game?.is_agent_turn ? "true" : undefined}
               data-human={game?.is_human_turn ? "true" : undefined}
             >
+              <i className={`turn-dot ${turnTone}`} aria-hidden="true" />
               <span className="turn-label">{turnLabel}</span>
             </span>
           </div>
         </GlassSurface>
 
         {error ? (
-          <div className="error-box game-error" data-testid="error-box">
+          <div className="error-box game-error" data-testid="error-box" role="alert">
+            <span className="error-dot" aria-hidden="true" />
             {error}
           </div>
         ) : null}
@@ -320,10 +372,27 @@ function App() {
           agent={agent}
           game={game}
           onDismiss={() => setResultDismissed(true)}
-          onPlayAgain={() => startGame()}
+          onPlayAgain={() => startGameNow()}
         />
       )}
     </main>
+  );
+}
+
+/** A small pulsing dot lattice used while a game is loading. */
+function Loader({ label }: { label: string }) {
+  return (
+    <div className="board-loader" role="status" aria-label={label}>
+      {Array.from({ length: 9 }, (_, index) => (
+        <span
+          className="board-loader-dot"
+          key={index}
+          style={{
+            animationDelay: `${(index % 3) * 0.12 + Math.floor(index / 3) * 0.12}s`,
+          }}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -397,6 +466,10 @@ function GlassNav({
 }) {
   const activeIndex = DIMENSIONS.indexOf(dims);
   const maxK = maxKFor(sizes);
+  const [restartSpin, setRestartSpin] = React.useState(0);
+  const lockedHint = canEditConfig
+    ? undefined
+    : "Locked after the first move — Restart to change.";
   return (
     <header className="glass-nav-wrap">
       <GlassSurface
@@ -421,6 +494,7 @@ function GlassNav({
               role="group"
               aria-label="Board dimensions"
               aria-disabled={!canEditConfig}
+              title={lockedHint}
             >
               <span
                 aria-hidden="true"
@@ -451,6 +525,7 @@ function GlassNav({
               data-testid="size-steppers"
               aria-label="Board size"
               aria-disabled={!canEditConfig}
+              title={lockedHint}
             >
               {sizes.map((size, axis) => (
                 <Stepper
@@ -470,6 +545,7 @@ function GlassNav({
               data-testid="k-stepper"
               aria-label="Win length"
               aria-disabled={!canEditConfig}
+              title={lockedHint}
             >
               <Stepper
                 disabled={!canEditConfig}
@@ -500,10 +576,13 @@ function GlassNav({
             <button
               className="nav-action"
               disabled={busy}
-              onClick={onRestart}
+              onClick={() => {
+                setRestartSpin((value) => value + 1);
+                onRestart();
+              }}
               type="button"
             >
-              <RotateCcw size={14} />
+              <RotateCcw className="restart-icon" key={restartSpin} size={14} />
               Restart
             </button>
             <button

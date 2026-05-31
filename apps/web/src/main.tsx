@@ -187,7 +187,7 @@ function App() {
         : "Ready";
   const searchStats = [
     ["mode", activeMode?.short_label ?? "--"],
-    ["ply", String(game?.ply ?? 0)],
+    ["policy", String(game?.ply ?? 0)],
     ["value", agent ? agent.value.toFixed(3) : "--"],
     ["sims", agent ? String(agent.simulations) : "--"],
     ["visits", totalVisits ? String(totalVisits) : "--"],

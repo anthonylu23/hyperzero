@@ -56,9 +56,10 @@ selection.
 
 Current validation:
 
-- Local lint and unit tests pass: `85 passed`.
-- Remote validation on `anthonypc` passes in the `torch` conda environment.
-- CUDA is available on `anthonypc` with an NVIDIA GeForce RTX 3060 Ti.
+- Local lint, unit tests, and web build pass: `ruff`, `126 passed`, and
+  `npm run build`.
+- Remote GPU validation has passed in the `torch` conda environment on an
+  NVIDIA GeForce RTX 3060 Ti workstation.
 - 3D 4x4x4 Connect-4 is promoted as stable. The guarded line-ResNet run reached
   final evals of `100.0%` vs random, `97.5%` vs tactical, `94.4%` vs heuristic,
   and `99.4%` vs MCTS-32 over 160 games per opponent.

@@ -17,7 +17,7 @@ python3 -m pytest -q
 Current known-good result:
 
 ```text
-71 passed
+126 passed
 ```
 
 ## Current Progress
@@ -59,8 +59,8 @@ Implemented:
 Validation so far:
 
 - Local lint and tests pass.
-- `anthonypc` remote lint and tests pass in the `torch` conda environment.
-- CUDA was verified on `anthonypc`: NVIDIA GeForce RTX 3060 Ti.
+- Remote GPU lint and tests pass in the `torch` conda environment.
+- CUDA was verified on an NVIDIA GeForce RTX 3060 Ti workstation.
 - A 3-iteration CUDA smoke run completed with checkpoints, losses, baseline
   evals, `metrics.jsonl`, and checkpoint-series JSONL output.
 - A 50-iteration 3x3 Connect-3 run completed at `/tmp/hyperzero-v1-full`.
@@ -76,7 +76,7 @@ Validation so far:
   - final vs matched MCTS-32: `76%` wins
   - final vs random: `92%` wins
   - final vs tactical: `78%` wins
-- Batched self-play comparison on `anthonypc`:
+- Batched self-play comparison on the remote GPU workstation:
   - 4x4 Connect-3, 2 iterations, same budget: single path `6.13s`, batched path
     `4.08s`
   - 4x4x4 Connect-4 smoke, 1 iteration, 8 games: single path `3.96s`, batched
@@ -95,8 +95,8 @@ Validation so far:
 
 ## May 19 GPU Experiment Block
 
-The larger 2D/3D experiment block ran on `anthonypc` in `/tmp` run roots named
-`/tmp/hyperzero-gpu-runs-20260519-*`. The runs used batched self-play,
+The larger 2D/3D experiment block ran on a remote GPU workstation in `/tmp` run
+roots named `/tmp/hyperzero-gpu-runs-20260519-*`. The runs used batched self-play,
 symmetry augmentation, train-time baseline evals every 5 iterations, JSONL loss
 and timing logs, eval-series, and final evals against random, tactical,
 heuristic, and MCTS-32. Intermediate checkpoints were pruned for later runs
@@ -284,10 +284,10 @@ threshold. The default threshold is `0.55` against `heuristic`.
 
 ## Remote GPU Machine
 
-Use `anthonypc` for fuller runs:
+Use a CUDA-capable remote workstation for fuller runs:
 
 ```bash
-ssh anthonylu@anthonypc
+ssh user@gpu-host
 cd /tmp/hyperzero-codex
 conda run -n torch python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no cuda')"
 ```
@@ -330,7 +330,7 @@ The runner now enforces or records the main operational guardrails:
 Recommended current 4D continuation command:
 
 ```bash
-ssh anthonylu@anthonypc
+ssh user@gpu-host
 cd /tmp/hyperzero-codex
 conda run -n torch python -u scripts/run_gpu_experiments.py \
   --run-root /tmp/hyperzero-gpu-runs-phase6-4d-tactical-weighted \
@@ -352,7 +352,7 @@ For reference, the completed fuller 2D training command was:
 Training:
 
 ```bash
-ssh anthonylu@anthonypc
+ssh user@gpu-host
 cd /tmp/hyperzero-codex
 rm -rf /tmp/hyperzero-v1-full
 conda run -n torch python scripts/train_v1.py \
@@ -399,7 +399,7 @@ This older command is kept as a quick correctness smoke. It is no longer the
 next strategic experiment after the May 19 block:
 
 ```bash
-ssh anthonylu@anthonypc
+ssh user@gpu-host
 cd /tmp/hyperzero-codex
 rm -rf /tmp/hyperzero-v1-3d-smoke
 conda run -n torch python scripts/train_v1.py \

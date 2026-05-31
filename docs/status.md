@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-05-20
+Last updated: 2026-05-31
 
 ## Summary
 
@@ -23,12 +23,13 @@ Current local validation:
 ```text
 python3 -m ruff check .
 python3 -m pytest -q
-71 passed
+npm run build
+126 passed
 ```
 
-Remote validation has passed on `anthonypc` in the `torch` conda environment.
-The GPU box has an NVIDIA GeForce RTX 3060 Ti and has run all major 3D/4D
-experiments with stable memory and temperature.
+Remote GPU validation has passed in the `torch` conda environment on an NVIDIA
+GeForce RTX 3060 Ti workstation. It has run all major 3D/4D experiments with
+stable memory and temperature.
 
 ## Completed Milestones
 

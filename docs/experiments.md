@@ -440,7 +440,7 @@ Seed  Checkpoint  Random  Tactical  Heuristic  MCTS-32
    3  latest        97.5%     32.5%      25.0%    95.0%
 ```
 
-Resource readout on `anthonypc`:
+Resource readout on the remote GPU workstation:
 
 - The first serial run showed low GPU utilization because 4D PUCT/search is
   CPU-bound and uses CUDA in short batched-inference bursts.

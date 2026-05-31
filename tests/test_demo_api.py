@@ -1,8 +1,19 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from hyperzero.server.agent_service import DEFAULT_CHECKPOINT
 from hyperzero.server.modes import build_mode_spec
 from services.api.main import app
+
+
+def test_demo_api_uses_promoted_residual_recovery_checkpoint() -> None:
+    assert DEFAULT_CHECKPOINT.parts[-5:] == (
+        "runs",
+        "universal_residual_followup_20260528",
+        "residual_recovery_lr2e5_seed6603",
+        "checkpoints",
+        "best_by_eval_score.pt",
+    )
 
 
 def test_demo_api_reports_modes() -> None:
@@ -88,7 +99,12 @@ def test_demo_api_creates_game_from_custom_shape() -> None:
 
     created = client.post(
         "/games",
-        json={"shape": [8, 8], "connect_k": 5, "human_mark": "X", "difficulty": "quick"},
+        json={
+            "shape": [8, 8],
+            "connect_k": 5,
+            "human_mark": "X",
+            "difficulty": "quick",
+        },
     )
 
     assert created.status_code == 200
@@ -104,7 +120,12 @@ def test_demo_api_rejects_invalid_custom_config() -> None:
     # connect_k cannot exceed the largest board dimension.
     response = client.post(
         "/games",
-        json={"shape": [4, 4], "connect_k": 6, "human_mark": "X", "difficulty": "quick"},
+        json={
+            "shape": [4, 4],
+            "connect_k": 6,
+            "human_mark": "X",
+            "difficulty": "quick",
+        },
     )
 
     assert response.status_code == 400

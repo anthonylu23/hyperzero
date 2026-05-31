@@ -1,0 +1,17 @@
+services:
+  - type: web
+    runtime: docker
+    name: hyperzero-api
+    region: oregon
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: HYPERZERO_DEVICE
+        value: cpu
+      - key: HYPERZERO_PRELOAD_MODEL
+        value: "1"
+      - key: HYPERZERO_ALLOWED_ORIGIN_REGEX
+        value: ^https://[a-z0-9-]+\.vercel\.app$

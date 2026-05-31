@@ -13,7 +13,7 @@ The Python dependencies are listed in `pyproject.toml`. The API expects the
 promoted universal checkpoint at:
 
 ```text
-runs/universal_4d_line_distill_bounded_20260523/distill_iter24_bounded_s800.pt
+runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt
 ```
 
 Override it with `HYPERZERO_UNIVERSAL_CHECKPOINT=/path/to/checkpoint.pt` if

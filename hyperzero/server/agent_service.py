@@ -22,8 +22,10 @@ from hyperzero.training import (
 DEFAULT_CHECKPOINT = (
     Path(__file__).resolve().parents[2]
     / "runs"
-    / "universal_4d_line_distill_bounded_20260523"
-    / "distill_iter24_bounded_s800.pt"
+    / "universal_residual_followup_20260528"
+    / "residual_recovery_lr2e5_seed6603"
+    / "checkpoints"
+    / "best_by_eval_score.pt"
 )
 
 DIFFICULTY_SIMULATIONS = {
@@ -73,6 +75,10 @@ class AgentService:
     @property
     def checkpoint(self) -> LoadedUniversalCheckpoint:
         return self._load()
+
+    def preload(self) -> None:
+        """Load the checkpoint and evaluator before serving traffic."""
+        self._load_evaluator()
 
     def metadata(self) -> dict[str, object]:
         """Return model metadata without forcing a model load when possible."""

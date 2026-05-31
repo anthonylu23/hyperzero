@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -27,15 +30,42 @@ class MoveRequest(BaseModel):
     action: int = Field(ge=0)
 
 
-app = FastAPI(title="HyperZero Local Demo API")
+def _allowed_origins() -> list[str]:
+    raw_origins = os.environ.get("HYPERZERO_ALLOWED_ORIGINS")
+    if raw_origins:
+        return [
+            origin.strip()
+            for origin in raw_origins.split(",")
+            if origin.strip()
+        ]
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+
+def _allowed_origin_regex() -> str | None:
+    raw_regex = os.environ.get("HYPERZERO_ALLOWED_ORIGIN_REGEX")
+    if raw_regex:
+        return raw_regex
+    if os.environ.get("HYPERZERO_ALLOW_LOCAL_ORIGINS", "1") == "1":
+        return LOCAL_DEV_ORIGIN_REGEX
+    return None
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if os.environ.get("HYPERZERO_PRELOAD_MODEL") == "1":
+        manager.agent_service.preload()
+    yield
+
+
+app = FastAPI(title="HyperZero Local Demo API", lifespan=lifespan)
 LOCAL_DEV_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1|\[::1\]):\d+$"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_origin_regex=LOCAL_DEV_ORIGIN_REGEX,
+    allow_origins=_allowed_origins(),
+    allow_origin_regex=_allowed_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

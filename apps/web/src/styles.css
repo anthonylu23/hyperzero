@@ -484,14 +484,6 @@ button:disabled {
   gap: 0.45rem;
 }
 
-.turn-readout b {
-  color: hsl(var(--text-secondary) / 0.76);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .player-row {
   align-items: center;
   color: hsl(var(--text-primary));
@@ -521,6 +513,36 @@ button:disabled {
 
 .turn-readout {
   color: hsl(var(--text-primary));
+}
+
+.turn-label {
+  display: inline-block;
+}
+
+.thinking-dots {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.18rem;
+  margin-left: -0.18rem;
+}
+
+.thinking-dots span {
+  animation: thinking-dot 1.25s ease-in-out infinite;
+  background: currentColor;
+  border-radius: 999px;
+  display: inline-block;
+  height: 0.22rem;
+  opacity: 0.38;
+  transform: translateY(0.08rem);
+  width: 0.22rem;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.32s;
 }
 
 .legend-dot {
@@ -849,6 +871,19 @@ button:disabled {
   }
 }
 
+@keyframes thinking-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.34;
+    transform: translateY(0.08rem);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-0.08rem);
+  }
+}
+
 /* Theme toggle: diagonal slide-wipe reveal via the View Transitions API */
 ::view-transition-old(root) {
   animation: none;
@@ -873,6 +908,7 @@ button:disabled {
   ::view-transition-old(root),
   ::view-transition-new(root),
   .animate-fade-up,
+  .thinking-dots span,
   .turn-readout[data-thinking="true"],
   .result-overlay,
   .result-card,

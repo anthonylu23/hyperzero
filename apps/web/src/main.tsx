@@ -303,8 +303,14 @@ function App() {
               data-thinking={game?.is_agent_turn ? "true" : undefined}
               data-human={game?.is_human_turn ? "true" : undefined}
             >
-              <b>turn</b>
-              {turnLabel}
+              <span className="turn-label">{turnLabel}</span>
+              {game?.is_agent_turn ? (
+                <span className="thinking-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              ) : null}
             </span>
           </div>
         </GlassSurface>

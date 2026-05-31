@@ -85,6 +85,7 @@ export function ResultOverlay({
           data-outcome={outcome}
           role="dialog"
         >
+          <span className="result-flash" aria-hidden="true" />
           <span className="result-title">{title}</span>
           <span className="result-subtitle">{game.mode.short_label}</span>
           <div className="result-stats" aria-label="Game summary">

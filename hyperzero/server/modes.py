@@ -102,7 +102,11 @@ def build_mode_spec(
             f"connect_k {connect_k} exceeds max_board_extent {MAX_BOARD_EXTENT}"
         )
 
-    game_config = GameConfig(shape=shape, connect_k=connect_k, gravity_axis=gravity_axis)
+    game_config = GameConfig(
+        shape=shape,
+        connect_k=connect_k,
+        gravity_axis=gravity_axis,
+    )
     extent_label = "×".join(str(size) for size in shape)
     return ModeSpec(
         id=f"{rank}d_{'x'.join(str(size) for size in shape)}_k{connect_k}",

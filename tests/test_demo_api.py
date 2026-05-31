@@ -10,7 +10,7 @@ def test_demo_api_uses_promoted_residual_recovery_checkpoint() -> None:
     assert DEFAULT_CHECKPOINT.parts[-5:] == (
         "runs",
         "universal_residual_followup_20260528",
-        "residual_recovery_lr2e5_seed6603",
+        "residual_recovery_teacher010_lr2e5_seed6604",
         "checkpoints",
         "best_by_eval_score.pt",
     )

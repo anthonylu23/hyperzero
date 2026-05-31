@@ -15,6 +15,12 @@ data/replay/
 *.pt
 *.pth
 *.ckpt
+!runs/
+runs/**
+!runs/universal_residual_followup_20260528/
+!runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/
+!runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/checkpoints/
+!runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/checkpoints/best_by_eval_score.pt
 
 # OS/editor
 .DS_Store

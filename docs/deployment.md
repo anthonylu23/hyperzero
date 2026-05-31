@@ -25,13 +25,13 @@ uvicorn services.api.main:app --host 0.0.0.0 --port ${PORT:-10000}
 The Docker image includes only the promoted universal checkpoint:
 
 ```text
-runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt
+runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/checkpoints/best_by_eval_score.pt
 ```
 
 Expected checkpoint SHA-256:
 
 ```text
-639f7d0241740ee09f080f3e46df516bcda9b4d6da20a02a999e4737e4f7ed68
+35f29d7d26d627ba7aa85fca1114909f631b6013e7f48f2a4f20fb0db57f008b
 ```
 
 Production environment:

@@ -148,28 +148,28 @@ hard-position pressure rather than only changing curriculum counts.
 Promoted residual-recovery checkpoint:
 
 ```text
-runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt
+runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/checkpoints/best_by_eval_score.pt
 iteration: 36
-eval score: 0.8328
+robust eval score: 0.8221
 eval simulations: 24
-eval games: 16 per variant/opponent
+eval games: 64 per variant/opponent seed, 3 seeds
 floor status: passed
 ```
 
-Train-time eval win rates:
+Robust eval win rates:
 
 ```text
-Variant         Random  Tactical  Heuristic
-2d_6x7_k4       100.0%    100.0%     100.0%
-2d_4x4_k3       100.0%     68.8%      81.2%
-3d_4x4x4_k4     100.0%    100.0%      68.8%
-4d_4x4x4x4_k4   100.0%    100.0%      81.2%
+Variant         Random  Tactical  Heuristic  MCTS-32
+2d_4x4_k3        96.4%     79.7%      72.9%    57.8%
+2d_6x7_k4       100.0%     96.9%     100.0%    98.4%
+3d_4x4x4_k4     100.0%     96.9%      71.4%   100.0%
+4d_4x4x4x4_k4   100.0%     96.9%      79.2%   100.0%
 ```
 
 This checkpoint is loaded by `hyperzero.server.agent_service.DEFAULT_CHECKPOINT`
 and is included in the Docker image for the public demo. The next useful
-research step is to run larger robust evals before treating the 16-game
-train-time eval table as a final result.
+research step is inference-budget confirmation and hard-position tracing for
+the remaining `2d_4x4_k3` MCTS weakness.
 
 ## Checkpoints
 

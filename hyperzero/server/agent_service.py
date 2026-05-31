@@ -23,7 +23,7 @@ DEFAULT_CHECKPOINT = (
     Path(__file__).resolve().parents[2]
     / "runs"
     / "universal_residual_followup_20260528"
-    / "residual_recovery_lr2e5_seed6603"
+    / "residual_recovery_teacher010_lr2e5_seed6604"
     / "checkpoints"
     / "best_by_eval_score.pt"
 )

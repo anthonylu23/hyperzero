@@ -211,10 +211,10 @@ universal best and still floor-failing. V3 improved over v2 on early aggregate
 score and restored 2D 6x7 heuristic to `50.0%` at that checkpoint, but it did
 not fix 4D heuristic and later iterations regressed.
 
-Universal residual-recovery follow-up:
+Universal teacher-anchored residual-recovery follow-up:
 
 ```text
-runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/
+runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/
 2D 6x7 K=4:        28 games/iteration
 2D 4x4 K=3:         8 games/iteration
 3D 4x4x4 K=4:      24 games/iteration
@@ -225,18 +225,18 @@ runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/
 The promoted checkpoint is iteration 36, loaded by the API by default:
 
 ```text
-runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt
+runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/checkpoints/best_by_eval_score.pt
 ```
 
-Its train-time eval score is `0.8328`, with eval floors passing. Win rates over
-16 games per variant/opponent:
+Its promotion robust eval score is `0.8221`, with eval floors passing. Win
+rates over 64 games per seed, 3 seeds, and MCTS-32 included:
 
 ```text
-Variant         Random  Tactical  Heuristic
-2d_6x7_k4       100.0%    100.0%     100.0%
-2d_4x4_k3       100.0%     68.8%      81.2%
-3d_4x4x4_k4     100.0%    100.0%      68.8%
-4d_4x4x4x4_k4   100.0%    100.0%      81.2%
+Variant         Random  Tactical  Heuristic  MCTS-32
+2d_4x4_k3        96.4%     79.7%      72.9%    57.8%
+2d_6x7_k4       100.0%     96.9%     100.0%    98.4%
+3d_4x4x4_k4     100.0%     96.9%      71.4%   100.0%
+4d_4x4x4x4_k4   100.0%     96.9%      79.2%   100.0%
 ```
 
 This is now the best local universal checkpoint and the checkpoint used by the
@@ -244,8 +244,7 @@ public demo.
 
 ## Next Research Phase
 
-The next useful universal step is a larger robust eval of the residual-recovery
-checkpoint, followed by search-budget or hard-position curriculum work if the
-robust eval exposes remaining heuristic/fork weaknesses. Specialist 4D work
-should remain diagnostic unless it directly addresses the tactical/heuristic
-tradeoff.
+The next useful universal step is inference-budget confirmation at sims
+`16/24/32/48`, followed by hard-position tracing for the remaining
+`2d_4x4_k3` MCTS weakness. Specialist 4D work should remain diagnostic unless
+it directly addresses the tactical/heuristic tradeoff.

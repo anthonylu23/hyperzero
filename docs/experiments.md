@@ -16,8 +16,8 @@ Current status:
   specialist 4D baseline, but results remain seed/checkpoint sensitive.
 - The active research phase is a universal agent: one shared checkpoint that can
   play selected 2D, 3D, and 4D Connect-K variants. The residual-recovery
-  iteration-36 checkpoint is the current promoted universal checkpoint and backs
-  the public demo.
+  teacher-anchored iteration-36 checkpoint is the current promoted universal
+  checkpoint and backs the public demo.
 
 The experiments should distinguish between:
 
@@ -599,12 +599,12 @@ Key readout:
   change search budget or add explicit hard-position/anti-fork pressure instead
   of only changing game counts.
 
-## Universal Residual-Recovery Checkpoint - 2026-05-28
+## Universal Residual-Recovery Checkpoint - 2026-05-31
 
 Run:
 
 ```text
-runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/
+runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/
 ```
 
 Configuration summary:
@@ -621,19 +621,19 @@ UniversalPolicyValueTransformer, hidden size 192, 3 residual blocks, 6 heads
 Promoted checkpoint:
 
 ```text
-runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt
+runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/checkpoints/best_by_eval_score.pt
 iteration 36
-eval score 0.8328
+robust eval score 0.8221
 ```
 
-Train-time evals used 16 games per variant/opponent:
+Promotion evals used 64 games per seed, 3 seeds, and included MCTS-32:
 
 ```text
-Variant         Random  Tactical  Heuristic
-2d_6x7_k4       100.0%    100.0%     100.0%
-2d_4x4_k3       100.0%     68.8%      81.2%
-3d_4x4x4_k4     100.0%    100.0%      68.8%
-4d_4x4x4x4_k4   100.0%    100.0%      81.2%
+Variant         Random  Tactical  Heuristic  MCTS-32
+2d_4x4_k3        96.4%     79.7%      72.9%    57.8%
+2d_6x7_k4       100.0%     96.9%     100.0%    98.4%
+3d_4x4x4_k4     100.0%     96.9%      71.4%   100.0%
+4d_4x4x4x4_k4   100.0%     96.9%      79.2%   100.0%
 ```
 
 Interpretation:

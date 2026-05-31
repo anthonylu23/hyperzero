@@ -76,14 +76,14 @@ Current validation:
   baseline at `100.0%` vs random, `55.0%` vs tactical, `55.0%` vs heuristic,
   and `100.0%` vs MCTS-32 over 40 games per opponent.
 - The universal-agent path is implemented and deployed. The promoted
-  residual-recovery checkpoint is iteration 36 with eval score `0.8328`, and it
-  passed eval floors across selected 2D, 3D, and 4D variants.
+  teacher-anchored residual-recovery checkpoint is iteration 36 with robust eval
+  score `0.8221`, and it passed floors across selected 2D, 3D, and 4D variants.
 
 Next experiments:
 
-- Run larger robust evals for the promoted universal residual-recovery
-  checkpoint and continue tuning with stronger search or hard-position
-  curriculum pressure.
+- Confirm the promoted universal checkpoint's inference budget at sims
+  `16/24/32/48`, then target hard-position traces for the remaining
+  `2d_4x4_k3` MCTS weakness.
 - Run targeted 4D specialist follow-ups only when they directly address the
   tactical/heuristic tradeoff seen in the stronger-search probe.
 

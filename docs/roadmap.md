@@ -265,11 +265,11 @@ V3 result:
 Residual-recovery result:
 
 - Promoted checkpoint:
-  `runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt`.
-- Iteration 36 reached train-time eval score `0.8328` and passed floors across
-  selected 2D, 3D, and 4D variants.
-- 4D evals over 16 games per opponent reached `100.0%` vs random, `100.0%` vs
-  tactical, and `81.2%` vs heuristic.
+  `runs/universal_residual_followup_20260528/residual_recovery_teacher010_lr2e5_seed6604/checkpoints/best_by_eval_score.pt`.
+- Iteration 36 reached robust eval score `0.8221` over 240 matchup records and
+  was the only candidate in the 2026-05-31 validation block to pass all floors.
+- 4D evals over 192 games per opponent reached `100.0%` vs random, `96.9%` vs
+  tactical, `79.2%` vs heuristic, and `100.0%` vs MCTS-32.
 - This is now the default universal checkpoint used by the web/API demo.
 
 Exit criteria:

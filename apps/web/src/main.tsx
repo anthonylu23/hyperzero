@@ -183,7 +183,7 @@ function App() {
     : game?.is_human_turn
       ? "Your move"
       : game?.is_agent_turn
-        ? "Agent thinking"
+        ? "Agent Thinking"
         : "Ready";
   const searchStats = [
     ["mode", activeMode?.short_label ?? "--"],
@@ -304,13 +304,6 @@ function App() {
               data-human={game?.is_human_turn ? "true" : undefined}
             >
               <span className="turn-label">{turnLabel}</span>
-              {game?.is_agent_turn ? (
-                <span className="thinking-dots" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </span>
-              ) : null}
             </span>
           </div>
         </GlassSurface>

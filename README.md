@@ -82,3 +82,7 @@ Next experiments:
 ## Working Name
 
 HyperZero: AlphaZero-Style Self-Play for N-Dimensional Connect-K
+
+## License
+
+MIT. See [LICENSE](LICENSE).

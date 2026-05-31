@@ -1,9 +1,10 @@
 import * as React from "react";
 import { OrbitControls, Text } from "@react-three/drei";
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import type { ThreeEvent } from "@react-three/fiber";
-import type { Mesh, OrthographicCamera } from "three";
+import type { Group, Mesh, MeshBasicMaterial, OrthographicCamera } from "three";
 
+import { useReducedMotion } from "../lib/useReducedMotion";
 import type {
   ActionInfo,
   AgentMovePayload,
@@ -65,6 +66,15 @@ const XZ_SLOT_SPACING = 0.58;
 const Y_SLOT_SPACING = 0.82;
 const CUBE_MARGIN = 1.1;
 const CUBE_GAP = 0.35;
+const SPATIAL_DROP_HEIGHT = 4.2;
+
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+function setCanvasCursor(value: "pointer" | "default") {
+  if (typeof document !== "undefined") {
+    document.body.style.cursor = value;
+  }
+}
 
 interface CubeLayout {
   // Per-axis cell counts in coord order [y (gravity), x, z, w].
@@ -111,7 +121,7 @@ export function BoardScene({
   if (!game) {
     return (
       <div className="canvas-shell loading">
-        <span>Loading board</span>
+        <BoardLoader />
       </div>
     );
   }
@@ -142,6 +152,21 @@ export function BoardScene({
   );
 }
 
+/** Branded loading indicator: a small pulsing dot lattice that nods to the board. */
+function BoardLoader() {
+  return (
+    <div className="board-loader" role="status" aria-label="Loading board">
+      {Array.from({ length: 9 }, (_, index) => (
+        <span
+          className="board-loader-dot"
+          key={index}
+          style={{ animationDelay: `${(index % 3) * 0.12 + Math.floor(index / 3) * 0.12}s` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function SpatialBoard({
   game,
   busy,
@@ -153,6 +178,11 @@ function SpatialBoard({
   game: GameSnapshot;
   palette: BoardPalette;
 }) {
+  const reduced = useReducedMotion();
+  const winningCells = React.useMemo(
+    () => new Set(game.winning_cells ?? []),
+    [game.winning_cells],
+  );
   const visibleActions = game.actions.filter(
     (action) => action.legal && action.next_cell,
   );
@@ -184,6 +214,8 @@ function SpatialBoard({
             isLast={cell.index === lastMoveIndex}
             key={cell.index}
             palette={palette}
+            reduced={reduced}
+            winning={winningCells.has(cell.index)}
           />
         ))}
         {visibleActions.map((action) => (
@@ -198,7 +230,13 @@ function SpatialBoard({
             onHoverAction={onHoverAction}
           />
         ))}
-        <OrbitControls enablePan={false} maxDistance={16} minDistance={5} />
+        <OrbitControls
+          dampingFactor={0.12}
+          enableDamping
+          enablePan={false}
+          maxDistance={16}
+          minDistance={5}
+        />
       </Canvas>
     </div>
   );
@@ -215,6 +253,11 @@ function CubeRow4DBoard({
   game: GameSnapshot;
   palette: BoardPalette;
 }) {
+  const reduced = useReducedMotion();
+  const winningCells = React.useMemo(
+    () => new Set(game.winning_cells ?? []),
+    [game.winning_cells],
+  );
   const hovered = actionById(game, hoveredAction);
   const hoveredCoord = actionCoord4D(hovered);
   const layout = makeCubeLayout(game.mode.shape);
@@ -244,10 +287,14 @@ function CubeRow4DBoard({
             hoveredCoord={hoveredCoord}
             layout={layout}
             palette={palette}
+            reduced={reduced}
+            winningCells={winningCells}
             onAction={onAction}
             onHoverAction={onHoverAction}
           />
           <OrbitControls
+            dampingFactor={0.12}
+            enableDamping
             enablePan={false}
             makeDefault
             maxDistance={26}
@@ -281,6 +328,8 @@ function CubeRowScene({
   layout,
   disabled,
   palette,
+  reduced,
+  winningCells,
   onAction,
   onHoverAction,
 }: {
@@ -290,6 +339,8 @@ function CubeRowScene({
   layout: CubeLayout;
   disabled: boolean;
   palette: BoardPalette;
+  reduced: boolean;
+  winningCells: Set<number>;
   onAction: (action: number) => void;
   onHoverAction: (action: number | null) => void;
 }) {
@@ -323,6 +374,8 @@ function CubeRowScene({
           key={cell.index}
           layout={layout}
           palette={palette}
+          reduced={reduced}
+          winning={winningCells.has(cell.index)}
         />
       ))}
 
@@ -372,6 +425,8 @@ function CubeSlot({
   isLast,
   layout,
   palette,
+  reduced,
+  winning,
 }: {
   cell: CellInfo;
   game: GameSnapshot;
@@ -379,8 +434,11 @@ function CubeSlot({
   isLast: boolean;
   layout: CubeLayout;
   palette: BoardPalette;
+  reduced: boolean;
+  winning: boolean;
 }) {
   const occupied = cell.value !== 0;
+  const position = cubeCoordPosition(cell.coord, layout);
   const color =
     cell.value === game.human_player
       ? palette.human
@@ -393,16 +451,22 @@ function CubeSlot({
   const edgeOpacity = occupied || isLast ? 0.94 : highlighted ? 0.65 : 0.52;
   const radius = occupied || isLast ? 0.15 : highlighted ? 0.17 : 0.15;
 
-  return (
-    <group position={cubeCoordPosition(cell.coord, layout)}>
+  const body = (
+    <>
       <mesh>
         <sphereGeometry args={[radius, 18, 18]} />
         <meshStandardMaterial
-          color={color}
+          color={winning ? palette.last : color}
           depthTest={occupied || isLast}
           depthWrite={occupied || isLast}
-          emissive={highlighted ? palette.ghost : palette.ghostEmissive}
-          emissiveIntensity={highlighted ? 0.16 : occupied ? 0 : 0.08}
+          emissive={
+            winning
+              ? palette.last
+              : highlighted
+                ? palette.ghost
+                : palette.ghostEmissive
+          }
+          emissiveIntensity={winning ? 0.55 : highlighted ? 0.16 : occupied ? 0 : 0.08}
           metalness={occupied ? 0.18 : 0}
           opacity={opacity}
           roughness={0.42}
@@ -412,16 +476,43 @@ function CubeSlot({
       <mesh>
         <sphereGeometry args={[radius + 0.011, 12, 12]} />
         <meshBasicMaterial
-          color={isLast ? palette.last : highlighted ? palette.ghost : palette.emptyEdge}
+          color={
+            winning || isLast
+              ? palette.last
+              : highlighted
+                ? palette.ghost
+                : palette.emptyEdge
+          }
           depthTest={false}
           depthWrite={false}
-          opacity={edgeOpacity}
+          opacity={winning ? 0.95 : edgeOpacity}
           transparent
           wireframe
         />
       </mesh>
-    </group>
+    </>
   );
+
+  if (occupied && winning && !reduced) {
+    return (
+      <PulseGroup position={position} scaleAmount={0.12}>
+        {body}
+      </PulseGroup>
+    );
+  }
+
+  if (occupied && isLast && !reduced) {
+    return (
+      <>
+        <FallingGroup dropHeight={layout.frameH + 0.6} target={position}>
+          {body}
+        </FallingGroup>
+        <LandingPulse color={palette.last} position={position} radius={radius} />
+      </>
+    );
+  }
+
+  return <group position={position}>{body}</group>;
 }
 
 function ColumnTarget({
@@ -451,7 +542,12 @@ function ColumnTarget({
   const previewPosition = cubeCoordPosition(action.next_cell, layout);
   const hoverAction = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
+    setCanvasCursor(disabled ? "default" : "pointer");
     onHoverAction(action.action);
+  };
+  const clearHover = () => {
+    setCanvasCursor("default");
+    onHoverAction(null);
   };
 
   return (
@@ -464,7 +560,7 @@ function ColumnTarget({
           }
         }}
         onPointerMove={hoverAction}
-        onPointerOut={() => onHoverAction(null)}
+        onPointerOut={clearHover}
         onPointerOver={hoverAction}
         position={position}
       >
@@ -564,33 +660,175 @@ function Piece({
   game,
   isLast,
   palette,
+  reduced,
+  winning,
 }: {
   cell: CellInfo;
   game: GameSnapshot;
   isLast: boolean;
   palette: BoardPalette;
+  reduced: boolean;
+  winning: boolean;
 }) {
   if (cell.value === 0) {
     return null;
   }
   const color = cell.value === game.human_player ? palette.human : palette.agent;
-  return (
-    <group position={coordToPosition(cell.coord, game)}>
+  const position = coordToPosition(cell.coord, game);
+
+  const body = (
+    <>
       <mesh>
         <sphereGeometry args={[isLast ? 0.38 : 0.34, 32, 32]} />
-        <meshStandardMaterial color={color} metalness={0.2} roughness={0.34} />
+        <meshStandardMaterial
+          color={winning ? palette.last : color}
+          emissive={winning ? palette.last : "#000000"}
+          emissiveIntensity={winning ? 0.55 : 0}
+          metalness={0.2}
+          roughness={0.34}
+        />
       </mesh>
-      {isLast ? (
+      {isLast || winning ? (
         <mesh>
           <sphereGeometry args={[0.43, 18, 18]} />
           <meshBasicMaterial
             color={palette.last}
-            opacity={0.82}
+            opacity={winning ? 0.95 : 0.82}
             transparent
             wireframe
           />
         </mesh>
       ) : null}
+    </>
+  );
+
+  if (winning && !reduced) {
+    return (
+      <PulseGroup position={position} scaleAmount={0.08}>
+        {body}
+      </PulseGroup>
+    );
+  }
+
+  if (isLast && !reduced) {
+    return (
+      <>
+        <FallingGroup dropHeight={SPATIAL_DROP_HEIGHT} target={position}>
+          {body}
+        </FallingGroup>
+        <LandingPulse color={palette.last} position={position} radius={0.42} />
+      </>
+    );
+  }
+
+  return <group position={position}>{body}</group>;
+}
+
+/** Drops its children from `dropHeight` above the target down into place. */
+function FallingGroup({
+  target,
+  dropHeight,
+  children,
+}: {
+  target: [number, number, number];
+  dropHeight: number;
+  children: React.ReactNode;
+}) {
+  const ref = React.useRef<Group>(null);
+  const progress = React.useRef(0);
+  const [tx, ty, tz] = target;
+
+  // Reset and seed the start position only when the resting target actually
+  // changes (compared by value) so unrelated re-renders don't restart the drop.
+  React.useLayoutEffect(() => {
+    progress.current = 0;
+    ref.current?.position.set(tx, ty + dropHeight, tz);
+  }, [tx, ty, tz, dropHeight]);
+
+  useFrame((_, delta) => {
+    const group = ref.current;
+    if (!group) {
+      return;
+    }
+    if (progress.current >= 1) {
+      group.position.set(tx, ty, tz);
+      return;
+    }
+    progress.current = Math.min(1, progress.current + delta * 3.6);
+    const eased = easeOutCubic(progress.current);
+    const startY = ty + dropHeight;
+    group.position.set(tx, startY + (ty - startY) * eased, tz);
+  });
+
+  return <group ref={ref}>{children}</group>;
+}
+
+/** A one-shot expanding wireframe pulse marking where a piece just landed. */
+function LandingPulse({
+  position,
+  color,
+  radius,
+}: {
+  position: [number, number, number];
+  color: string;
+  radius: number;
+}) {
+  const ref = React.useRef<Mesh>(null);
+  const materialRef = React.useRef<MeshBasicMaterial>(null);
+  const life = React.useRef(0);
+
+  useFrame((_, delta) => {
+    const mesh = ref.current;
+    const material = materialRef.current;
+    if (!mesh || !material) {
+      return;
+    }
+    life.current += delta * 1.8;
+    const t = Math.min(1, life.current);
+    mesh.scale.setScalar(1 + t * 2.4);
+    material.opacity = (1 - t) * 0.6;
+    mesh.visible = t < 1;
+  });
+
+  return (
+    <mesh position={position} ref={ref}>
+      <sphereGeometry args={[radius, 16, 16]} />
+      <meshBasicMaterial
+        color={color}
+        depthWrite={false}
+        opacity={0.6}
+        ref={materialRef}
+        transparent
+        wireframe
+      />
+    </mesh>
+  );
+}
+
+/** Gently pulses its children's scale (used to celebrate the winning line). */
+function PulseGroup({
+  position,
+  scaleAmount,
+  children,
+}: {
+  position: [number, number, number];
+  scaleAmount: number;
+  children: React.ReactNode;
+}) {
+  const ref = React.useRef<Group>(null);
+
+  useFrame((state) => {
+    const group = ref.current;
+    if (!group) {
+      return;
+    }
+    const scale = 1 + Math.sin(state.clock.elapsedTime * 4) * scaleAmount;
+    group.scale.setScalar(scale);
+  });
+
+  return (
+    <group position={position} ref={ref}>
+      {children}
     </group>
   );
 }
@@ -625,9 +863,13 @@ function ActionGhost({
           onAction(action.action);
         }
       }}
-      onPointerOut={() => onHoverAction(null)}
+      onPointerOut={() => {
+        setCanvasCursor("default");
+        onHoverAction(null);
+      }}
       onPointerOver={(event) => {
         event.stopPropagation();
+        setCanvasCursor(disabled ? "default" : "pointer");
         onHoverAction(action.action);
       }}
       position={coordToPosition(action.next_cell, game)}

@@ -25,13 +25,19 @@ hyperzero/
   search/              Reusable Monte Carlo Tree Search
   universal/           Dimension-conditioned board/action encoding
   eval/                Head-to-head matchup evaluation
+  server/              Demo-session and universal-agent service logic
+services/api/          FastAPI demo API
+apps/web/              Vite/React/Three.js playable demo
 benchmarks/
   benchmark_engine.py  Engine throughput smoke benchmark
 scripts/
   evaluate_baselines.py  Baseline matchup runner
   train_universal.py     Universal mixed-game training runner
+  smoke_deployed_demo.py Deployed API/web smoke test
 docs/
   status.md            Current project status and active run notes
+  deployment.md        Render/Vercel deployment notes
+  local-web-demo.md    Local playable demo setup
   proposal.md          Research proposal and project framing
   roadmap.md           Milestones and implementation phases
   architecture.md      Planned system architecture
@@ -57,7 +63,9 @@ selection.
 Current validation:
 
 - Local lint, unit tests, and web build pass: `ruff`, `126 passed`, and
-  `npm run build`.
+  `npm run build --prefix apps/web`.
+- The public demo is deployed at `https://hyperzero-web-demo.vercel.app`, backed
+  by `https://hyperzero-api.onrender.com`.
 - Remote GPU validation has passed in the `torch` conda environment on an
   NVIDIA GeForce RTX 3060 Ti workstation.
 - 3D 4x4x4 Connect-4 is promoted as stable. The guarded line-ResNet run reached
@@ -67,15 +75,15 @@ Current validation:
   multi-seed follow-up completed, with seed 2 now the current specialist 4D
   baseline at `100.0%` vs random, `55.0%` vs tactical, `55.0%` vs heuristic,
   and `100.0%` vs MCTS-32 over 40 games per opponent.
-- The universal-agent scaffold is implemented and smoke-tested. The initial
-  mixed-game run remains the best universal checkpoint (`0.6055` at iteration
-  33); curriculum v2 and v3 continuations improved diagnostics but did not pass
-  promotion floors.
+- The universal-agent path is implemented and deployed. The promoted
+  residual-recovery checkpoint is iteration 36 with eval score `0.8328`, and it
+  passed eval floors across selected 2D, 3D, and 4D variants.
 
 Next experiments:
 
-- Continue universal-agent tuning with stronger search or hard-position
-  curriculum pressure rather than only changing game-count weights.
+- Run larger robust evals for the promoted universal residual-recovery
+  checkpoint and continue tuning with stronger search or hard-position
+  curriculum pressure.
 - Run targeted 4D specialist follow-ups only when they directly address the
   tactical/heuristic tradeoff seen in the stronger-search probe.
 

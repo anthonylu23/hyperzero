@@ -15,7 +15,9 @@ Current status:
 - The 4D tactical-weighted multi-seed follow-up completed. Seed 2 is the current
   specialist 4D baseline, but results remain seed/checkpoint sensitive.
 - The active research phase is a universal agent: one shared checkpoint that can
-  play selected 2D, 3D, and 4D Connect-K variants.
+  play selected 2D, 3D, and 4D Connect-K variants. The residual-recovery
+  iteration-36 checkpoint is the current promoted universal checkpoint and backs
+  the public demo.
 
 The experiments should distinguish between:
 
@@ -596,6 +598,52 @@ Key readout:
   solve cross-variant heuristic consistency. The next universal experiment should
   change search budget or add explicit hard-position/anti-fork pressure instead
   of only changing game counts.
+
+## Universal Residual-Recovery Checkpoint - 2026-05-28
+
+Run:
+
+```text
+runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/
+```
+
+Configuration summary:
+
+```text
+2D 6x7 K=4:        28 games/iteration
+2D 4x4 K=3:         8 games/iteration
+3D 4x4x4 K=4:      24 games/iteration
+4D 4x4x4x4 K=4:    24 games/iteration
+UniversalPolicyValueTransformer, hidden size 192, 3 residual blocks, 6 heads
+24 PUCT simulations, 64 training steps, batch size 384
+```
+
+Promoted checkpoint:
+
+```text
+runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt
+iteration 36
+eval score 0.8328
+```
+
+Train-time evals used 16 games per variant/opponent:
+
+```text
+Variant         Random  Tactical  Heuristic
+2d_6x7_k4       100.0%    100.0%     100.0%
+2d_4x4_k3       100.0%     68.8%      81.2%
+3d_4x4x4_k4     100.0%    100.0%      68.8%
+4d_4x4x4x4_k4   100.0%    100.0%      81.2%
+```
+
+Interpretation:
+
+- This is the best local universal checkpoint and is the default checkpoint for
+  the FastAPI/Vite demo.
+- The checkpoint passed configured floors, including 4D heuristic. That fixes
+  the biggest failure mode of the earlier curriculum-only continuations.
+- The sample size is still modest. Larger robust evals should be run before
+  using this as a final research claim.
 
 ## Reproducibility Requirements
 

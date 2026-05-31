@@ -63,7 +63,9 @@ Current status:
   stably in 4D, but current specialist agents remain weak against tactical and
   heuristic threat/fork play.
 - The next research extension is a universal agent: one shared checkpoint that
-  can play selected 2D, 3D, and 4D Connect-K variants. This tests whether
+  can play selected 2D, 3D, and 4D Connect-K variants. The current
+  residual-recovery checkpoint is promoted for the public demo and has passed
+  train-time eval floors across the selected variants. This tests whether
   tactical concepts learned in cheaper dimensions can transfer into 4D.
 
 ## Expected Contributions

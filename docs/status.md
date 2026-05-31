@@ -6,14 +6,15 @@ Last updated: 2026-05-31
 
 HyperZero has moved past infrastructure smoke tests. The engine, baseline
 agents, PUCT search, neural agents, self-play training, checkpoint evaluation,
-GPU experiment runner, telemetry logging, and terminal demo are implemented and
-validated.
+GPU experiment runner, telemetry logging, terminal demo, and public web demo are
+implemented and validated.
 
 The main research result so far:
 
 ```text
 3D 4x4x4 Connect-4: stable/promoted
 4D 4x4x4x4 Connect-4: feasible, stable, improved but still noisy
+Universal 2D/3D/4D agent: promoted residual-recovery checkpoint deployed
 ```
 
 ## Validation
@@ -22,9 +23,15 @@ Current local validation:
 
 ```text
 python3 -m ruff check .
-python3 -m pytest -q
-npm run build
-126 passed
+python3 -m pytest -q  # 126 passed
+npm run build --prefix apps/web
+```
+
+The deployed demo smoke test passes against:
+
+```text
+API: https://hyperzero-api.onrender.com
+Web: https://hyperzero-web-demo.vercel.app
 ```
 
 Remote GPU validation has passed in the `torch` conda environment on an NVIDIA
@@ -41,9 +48,12 @@ stable memory and temperature.
 - Self-play training with replay, checkpointing, resume support, train-time
   evals, checkpoint-series evals, loss traces, and GPU telemetry.
 - Terminal demo supports playing 2D games against the best neural checkpoint.
+- FastAPI/Vite web demo supports 2D, 3D, and 4D play against the promoted
+  universal checkpoint.
 - 3D stability gate completed.
 - 4D smoke, initial training, heuristic continuation, and tactical-weighted
   multi-seed follow-up completed.
+- Universal residual-recovery checkpoint promoted and deployed.
 
 ## 3D Result
 
@@ -147,7 +157,7 @@ scripts/train_universal.py
 
 The same checkpoint can evaluate and play selected 2D, 3D, and 4D variants
 through the existing PUCT interface. See `docs/universal-agent.md` for the smoke
-command and RTX 3060 Ti starter command.
+command and current promoted-checkpoint notes.
 
 Initial universal run:
 
@@ -201,9 +211,41 @@ universal best and still floor-failing. V3 improved over v2 on early aggregate
 score and restored 2D 6x7 heuristic to `50.0%` at that checkpoint, but it did
 not fix 4D heuristic and later iterations regressed.
 
+Universal residual-recovery follow-up:
+
+```text
+runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/
+2D 6x7 K=4:        28 games/iteration
+2D 4x4 K=3:         8 games/iteration
+3D 4x4x4 K=4:      24 games/iteration
+4D 4x4x4x4 K=4:    24 games/iteration
+24 PUCT simulations, 64 training steps, batch size 384
+```
+
+The promoted checkpoint is iteration 36, loaded by the API by default:
+
+```text
+runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt
+```
+
+Its train-time eval score is `0.8328`, with eval floors passing. Win rates over
+16 games per variant/opponent:
+
+```text
+Variant         Random  Tactical  Heuristic
+2d_6x7_k4       100.0%    100.0%     100.0%
+2d_4x4_k3       100.0%     68.8%      81.2%
+3d_4x4x4_k4     100.0%    100.0%      68.8%
+4d_4x4x4x4_k4   100.0%    100.0%      81.2%
+```
+
+This is now the best local universal checkpoint and the checkpoint used by the
+public demo.
+
 ## Next Research Phase
 
-The next useful universal experiment should increase search budget or add
-explicit anti-heuristic/fork pressure rather than only reweighting the curriculum.
-The stronger-search 4D probe showed heuristic upside but tactical regression, so
-specialist 4D work should remain diagnostic rather than the main path.
+The next useful universal step is a larger robust eval of the residual-recovery
+checkpoint, followed by search-budget or hard-position curriculum work if the
+robust eval exposes remaining heuristic/fork weaknesses. Specialist 4D work
+should remain diagnostic unless it directly addresses the tactical/heuristic
+tradeoff.

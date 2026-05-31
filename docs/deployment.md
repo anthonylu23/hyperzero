@@ -4,6 +4,14 @@ HyperZero deploys as two services:
 
 - Render runs the FastAPI inference API from the root `Dockerfile`.
 - Vercel serves the Vite/React frontend from `apps/web`.
+- Both services deploy from the GitHub `main` branch.
+
+Production URLs:
+
+```text
+API: https://hyperzero-api.onrender.com
+Web: https://hyperzero-web-demo.vercel.app
+```
 
 ## Backend: Render
 
@@ -34,9 +42,19 @@ HYPERZERO_PRELOAD_MODEL=1
 HYPERZERO_ALLOWED_ORIGIN_REGEX=^https://[a-z0-9-]+\.vercel\.app$
 ```
 
+Live service settings:
+
+```text
+Repository: https://github.com/anthonylu23/hyperzero
+Branch: main
+Auto deploy: commit
+Health check: /health
+```
+
 ## Frontend: Vercel
 
-The Vercel project root is `apps/web`, with `apps/web/vercel.json` setting:
+The Vercel project is linked to `anthonylu23/hyperzero`, deploys production from
+`main`, and uses `apps/web` as the project root. `apps/web/vercel.json` sets:
 
 ```text
 Build command: npm run build
@@ -44,18 +62,21 @@ Output directory: dist
 Framework: Vite
 ```
 
-Set this Vercel environment variable after the Render API URL is known:
+The Vercel production environment must set:
 
 ```text
-VITE_API_URL=https://<render-service>.onrender.com
+VITE_API_URL=https://hyperzero-api.onrender.com
 ```
 
 ## Verification
 
-After both services deploy:
+After both services deploy, run:
 
 ```bash
 python3 scripts/smoke_deployed_demo.py \
-  --api-url https://<render-service>.onrender.com \
-  --web-url https://<vercel-service>.vercel.app
+  --api-url https://hyperzero-api.onrender.com \
+  --web-url https://hyperzero-web-demo.vercel.app
 ```
+
+A passing smoke confirms the API health endpoint, checkpoint presence/model
+load, one human/agent move round trip, and a `200` response from the web app.

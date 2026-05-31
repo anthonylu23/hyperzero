@@ -201,8 +201,9 @@ Goal: Train one agent that can play 2D, 3D, and 4D Connect-K variants with a
 single shared model.
 
 Status: scaffold implemented, smoke-tested, and exercised by initial and v2
-mixed-game runs. Active work is curriculum/search tuning for heuristic
-consistency without tactical regression.
+mixed-game runs. The residual-recovery iteration-36 checkpoint is promoted and
+backs the public demo. Active work is robust evaluation plus curriculum/search
+tuning for heuristic consistency without tactical regression.
 
 Motivation:
 
@@ -261,6 +262,16 @@ V3 result:
 - Curriculum reweighting alone is not enough; the next universal pass should
   change search budget or add hard-position/anti-fork pressure.
 
+Residual-recovery result:
+
+- Promoted checkpoint:
+  `runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt`.
+- Iteration 36 reached train-time eval score `0.8328` and passed floors across
+  selected 2D, 3D, and 4D variants.
+- 4D evals over 16 games per opponent reached `100.0%` vs random, `100.0%` vs
+  tactical, and `81.2%` vs heuristic.
+- This is now the default universal checkpoint used by the web/API demo.
+
 Exit criteria:
 
 - A single checkpoint loads once and can legally play all selected 2D, 3D, and
@@ -275,9 +286,13 @@ Exit criteria:
 
 Goal: Make the project understandable and demonstrable.
 
+Status: playable web demo implemented and deployed; final-report artifacts are
+still pending.
+
 Deliverables:
 
-- Human-play interface against trained agents
+- Human-play interface against trained agents: implemented for local and
+  deployed web demo
 - Game replay viewer
 - Training plots
 - Final research report

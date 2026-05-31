@@ -1,7 +1,9 @@
 # Universal Agent Scaffold
 
 Phase 7 adds a parallel universal training path for one shared checkpoint across
-multiple Connect-K variants. The specialist v1 loop remains intact.
+multiple Connect-K variants. The specialist v1 loop remains intact. The current
+promoted universal checkpoint is the residual-recovery iteration-36 checkpoint
+used by the web/API demo.
 
 ## Design
 
@@ -142,6 +144,32 @@ prior universal early best: 0.6055 at iteration 33
 V3 improved over v2, but it also failed floors and did not replace the initial
 universal best. The next universal pass should change search budget or add
 hard-position pressure rather than only changing curriculum counts.
+
+Promoted residual-recovery checkpoint:
+
+```text
+runs/universal_residual_followup_20260528/residual_recovery_lr2e5_seed6603/checkpoints/best_by_eval_score.pt
+iteration: 36
+eval score: 0.8328
+eval simulations: 24
+eval games: 16 per variant/opponent
+floor status: passed
+```
+
+Train-time eval win rates:
+
+```text
+Variant         Random  Tactical  Heuristic
+2d_6x7_k4       100.0%    100.0%     100.0%
+2d_4x4_k3       100.0%     68.8%      81.2%
+3d_4x4x4_k4     100.0%    100.0%      68.8%
+4d_4x4x4x4_k4   100.0%    100.0%      81.2%
+```
+
+This checkpoint is loaded by `hyperzero.server.agent_service.DEFAULT_CHECKPOINT`
+and is included in the Docker image for the public demo. The next useful
+research step is to run larger robust evals before treating the 16-game
+train-time eval table as a final result.
 
 ## Checkpoints
 

@@ -63,6 +63,7 @@ export interface GameSnapshot {
   };
   cells: CellInfo[];
   actions: ActionInfo[];
+  winning_cells?: number[];
 }
 
 export interface AgentMovePayload {

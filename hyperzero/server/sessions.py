@@ -126,7 +126,29 @@ class GameSession:
             "state": state_snapshot,
             "cells": cells,
             "actions": actions,
+            "winning_cells": self._winning_cells(),
         }
+
+    def _winning_cells(self) -> list[int]:
+        """Return the flat cell indices of the winning line, or [] if none.
+
+        The last move is always the winning move on a decisive terminal state,
+        so the winning line is the one through that cell fully owned by winner.
+        """
+        state = self.state
+        if not state.terminal or state.winner in (None, 0):
+            return []
+        last_move = state.last_move
+        if last_move is None:
+            return []
+        config = state.config
+        winner = state.winner
+        board = state.board
+        for line_id in config.lines_by_cell[last_move.cell_index]:
+            line = config.winning_lines[line_id]
+            if all(int(board[cell]) == winner for cell in line):
+                return [int(cell) for cell in line]
+        return []
 
     def _ensure_active(self) -> None:
         if self.state.terminal:

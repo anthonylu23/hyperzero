@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,8 +13,9 @@ import numpy as np
 import torch
 
 from hyperzero.game import GameState
+from hyperzero.game.actions import normalize_legal_policy
 from hyperzero.models import UniversalEvaluator
-from hyperzero.search.puct import PUCTConfig, PUCTResult, run_puct
+from hyperzero.search.puct import PUCTConfig, PUCTResult, PUCTSearchSession, run_puct
 from hyperzero.training import (
     LoadedUniversalCheckpoint,
     load_universal_training_checkpoint,
@@ -45,6 +47,14 @@ class AgentMoveResult:
     value: float
     visits: tuple[int, ...]
     policy: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AgentSearchEvent:
+    """One server-streamed update from agent search."""
+
+    event: str
+    payload: dict[str, object]
 
 
 class AgentService:
@@ -120,6 +130,60 @@ class AgentService:
             duration_ms = (time.perf_counter() - start) * 1000.0
         return _to_agent_move_result(result, duration_ms, simulations)
 
+    def select_action_events(
+        self,
+        state: GameState,
+        *,
+        difficulty: str,
+    ) -> Iterator[AgentSearchEvent]:
+        """Run PUCT and yield progress events ending with a final move result."""
+        simulations = simulations_for_difficulty(difficulty)
+        yield AgentSearchEvent(
+            "model_loading",
+            {
+                "difficulty": difficulty,
+                "simulations": simulations,
+                "loaded": self.loaded,
+            },
+        )
+        with self._lock:
+            evaluator = self._load_evaluator()
+            config = PUCTConfig(simulations=simulations, c_puct=1.5)
+            session = PUCTSearchSession(state, config, self._rng)
+            start = time.perf_counter()
+
+            leaf = session.select_leaf()
+            session.complete_leaf(leaf, evaluator.evaluate(leaf.state))
+            yield AgentSearchEvent(
+                "search_started",
+                _search_progress_payload(session, state, start, simulations),
+            )
+
+            while not session.complete:
+                leaf = session.select_leaf()
+                evaluation = (
+                    evaluator.evaluate(leaf.state) if leaf.requires_evaluation else None
+                )
+                session.complete_leaf(leaf, evaluation)
+                yield AgentSearchEvent(
+                    "simulation_progress",
+                    _search_progress_payload(session, state, start, simulations),
+                )
+
+            result = session.result()
+            if torch.cuda.is_available() and torch.device(self.device).type == "cuda":
+                torch.cuda.synchronize(torch.device(self.device))
+            duration_ms = (time.perf_counter() - start) * 1000.0
+
+        yield AgentSearchEvent(
+            "move_final",
+            {
+                "agent": _agent_result_payload(
+                    _to_agent_move_result(result, duration_ms, simulations)
+                ),
+            },
+        )
+
     def _load(self) -> LoadedUniversalCheckpoint:
         if self._checkpoint is None:
             if not self.checkpoint_path.exists():
@@ -167,3 +231,33 @@ def _to_agent_move_result(
         visits=tuple(int(value) for value in result.visits.tolist()),
         policy=tuple(float(value) for value in result.policy.tolist()),
     )
+
+
+def _agent_result_payload(result: AgentMoveResult) -> dict[str, object]:
+    return {
+        "action": result.action,
+        "duration_ms": result.duration_ms,
+        "simulations": result.simulations,
+        "value": result.value,
+        "visits": list(result.visits),
+        "policy": list(result.policy),
+    }
+
+
+def _search_progress_payload(
+    session: PUCTSearchSession,
+    state: GameState,
+    start: float,
+    simulations: int,
+) -> dict[str, object]:
+    visits = np.zeros(state.config.num_actions, dtype=np.float64)
+    for action, child in session.root.children.items():
+        visits[action] = child.visit_count
+    policy = normalize_legal_policy(visits, state.legal_mask())
+    return {
+        "simulations_completed": session.simulations_run,
+        "simulations": simulations,
+        "duration_ms": (time.perf_counter() - start) * 1000.0,
+        "visits": [int(value) for value in visits.tolist()],
+        "policy": [float(value) for value in policy.tolist()],
+    }

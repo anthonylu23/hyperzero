@@ -5,7 +5,12 @@ import { BoardScene } from "../components/BoardScene";
 import GlassSurface from "../components/GlassSurface";
 import NavMenu from "../components/NavMenu";
 import ResultOverlay from "../components/ResultOverlay";
-import { createGame, postAgentMove, postHumanMove } from "../lib/api";
+import {
+  createGame,
+  postAgentMove,
+  postHumanMove,
+  streamAgentMove,
+} from "../lib/api";
 import type { AgentMovePayload, GameSnapshot } from "../lib/types";
 
 const DIFFICULTY = "quick";
@@ -23,6 +28,12 @@ type Theme = "dark" | "light";
 interface BoardConfig {
   sizes: number[];
   k: number;
+}
+
+interface SearchProgress {
+  completed: number;
+  simulations: number;
+  visits: number[];
 }
 
 const DIM_DEFAULTS: Record<Dimensions, BoardConfig> = {
@@ -48,6 +59,8 @@ export default function GamePage({
   const [k, setK] = React.useState<number>(DIM_DEFAULTS[2].k);
   const [game, setGame] = React.useState<GameSnapshot | null>(null);
   const [agent, setAgent] = React.useState<AgentMovePayload | null>(null);
+  const [searchProgress, setSearchProgress] =
+    React.useState<SearchProgress | null>(null);
   const [hoveredAction, setHoveredAction] = React.useState<number | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -68,18 +81,50 @@ export default function GamePage({
   const requestAgentMove = React.useCallback(
     async (gameId: string, shouldApply: () => boolean = () => true) => {
       setBusy(true);
+      setSearchProgress(null);
       try {
-        const response = await postAgentMove(gameId);
+        let response;
+        try {
+          response = await streamAgentMove(gameId, (event) => {
+            if (!shouldApply()) {
+              return;
+            }
+            if (event.event === "model_loading") {
+              setSearchProgress({
+                completed: 0,
+                simulations: event.data.simulations,
+                visits: [],
+              });
+            } else if (
+              event.event === "search_started" ||
+              event.event === "simulation_progress"
+            ) {
+              setSearchProgress({
+                completed: event.data.simulations_completed,
+                simulations: event.data.simulations,
+                visits: event.data.visits,
+              });
+            }
+          });
+        } catch (streamError) {
+          if (!shouldApply()) {
+            return null;
+          }
+          console.warn("Agent streaming failed; falling back to REST.", streamError);
+          response = await postAgentMove(gameId);
+        }
         if (!shouldApply()) {
           return null;
         }
         setGame(response.game);
         setAgent(response.agent);
+        setSearchProgress(null);
         setError(null);
         return response.game;
       } catch (err) {
         if (shouldApply()) {
           setError(err instanceof Error ? err.message : "Agent move failed");
+          setSearchProgress(null);
         }
         return null;
       } finally {
@@ -98,6 +143,7 @@ export default function GamePage({
       setBusy(true);
       setError(null);
       setAgent(null);
+      setSearchProgress(null);
       setHoveredAction(null);
       setResultDismissed(false);
       try {
@@ -177,6 +223,7 @@ export default function GamePage({
       setBusy(true);
       setError(null);
       setAgent(null);
+      setSearchProgress(null);
       try {
         const humanResponse = await postHumanMove(game.game_id, action);
         setHoveredAction(null);
@@ -196,7 +243,13 @@ export default function GamePage({
 
   const canEditConfig = Boolean(game && game.ply === 0 && !moveInFlight);
   const activeMode = game?.mode;
-  const totalVisits = agent?.visits.reduce((sum, value) => sum + value, 0);
+  const currentVisits = agent?.visits ?? searchProgress?.visits;
+  const totalVisits = currentVisits?.reduce((sum, value) => sum + value, 0);
+  const simsValue = agent
+    ? String(agent.simulations)
+    : searchProgress
+      ? `${searchProgress.completed}/${searchProgress.simulations}`
+      : "--";
   const turnTone = game?.terminal
     ? "idle"
     : game?.is_human_turn
@@ -219,7 +272,7 @@ export default function GamePage({
     ["mode", activeMode?.short_label ?? "--"],
     ["policy", String(game?.ply ?? 0)],
     ["value", agent ? agent.value.toFixed(3) : "--"],
-    ["sims", agent ? String(agent.simulations) : "--"],
+    ["sims", simsValue],
     ["visits", totalVisits ? String(totalVisits) : "--"],
     ["best", agent ? String(agent.action) : "--"],
   ];

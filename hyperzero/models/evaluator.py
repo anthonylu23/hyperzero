@@ -51,7 +51,7 @@ class NeuralEvaluator:
         )
 
         self.model.eval()
-        with torch.no_grad():
+        with torch.inference_mode():
             self._synchronize_if_cuda(device)
             start = time.perf_counter()
             policy_logits, value = self.model(board)

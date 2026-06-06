@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 
 from hyperzero.game import GameState, InvalidActionError, TerminalStateError
-from hyperzero.server.agent_service import AgentMoveResult, AgentService
+from hyperzero.server.agent_service import (
+    AgentMoveResult,
+    AgentSearchEvent,
+    AgentService,
+)
 from hyperzero.server.modes import ModeSpec, build_mode_spec, get_mode
 
 DEFAULT_MODE_ID = "2d_6x7_k4"
@@ -63,6 +68,36 @@ class GameSession:
         self.agent_move_count += 1
         self.updated_at = time.time()
         return asdict(move), result
+
+    def apply_agent_move_events(
+        self,
+        agent_service: AgentService,
+    ) -> Iterator[AgentSearchEvent]:
+        """Stream agent search progress and apply the final selected move."""
+        self._ensure_agent_turn()
+        for event in agent_service.select_action_events(
+            self.state,
+            difficulty=self.difficulty,
+        ):
+            if event.event != "move_final":
+                yield event
+                continue
+
+            agent_payload = event.payload.get("agent")
+            if not isinstance(agent_payload, dict):
+                raise RuntimeError("agent stream final event is missing payload")
+            action = int(agent_payload["action"])
+            move = self.state.make_move(action)
+            self.agent_move_count += 1
+            self.updated_at = time.time()
+            yield AgentSearchEvent(
+                "move_final",
+                {
+                    "move": asdict(move),
+                    "agent": agent_payload,
+                    "game": self.snapshot(),
+                },
+            )
 
     def snapshot(self) -> dict[str, object]:
         """Return a JSON-safe game snapshot for clients."""
@@ -154,6 +189,11 @@ class GameSession:
         if self.state.terminal:
             raise TerminalStateError("game is already finished")
 
+    def _ensure_agent_turn(self) -> None:
+        self._ensure_active()
+        if self.state.player_to_move != self.agent_player:
+            raise TurnError("it is not the agent player's turn")
+
 
 class TurnError(RuntimeError):
     """Raised when a player tries to act out of turn."""
@@ -214,6 +254,14 @@ class SessionManager:
         game = self.get_game(game_id)
         move, result = game.apply_agent_move(self.agent_service)
         return game, move, result
+
+    def apply_agent_move_events(
+        self,
+        game_id: str,
+    ) -> Iterator[AgentSearchEvent]:
+        game = self.get_game(game_id)
+        game._ensure_agent_turn()
+        return game.apply_agent_move_events(self.agent_service)
 
 
 def player_from_mark(mark: str) -> int:

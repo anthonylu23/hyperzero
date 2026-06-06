@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from hyperzero.game import InvalidActionError, TerminalStateError
-from hyperzero.server.agent_service import AgentMoveResult, simulations_for_difficulty
+from hyperzero.server.agent_service import (
+    AgentMoveResult,
+    AgentSearchEvent,
+    simulations_for_difficulty,
+)
 from hyperzero.server.modes import DEMO_MODES
 from hyperzero.server.sessions import SessionManager, TurnError, error_name
 
@@ -168,6 +174,30 @@ def apply_agent_move(game_id: str) -> dict[str, object]:
     }
 
 
+@app.post("/games/{game_id}/agent-move-stream")
+def stream_agent_move(game_id: str) -> StreamingResponse:
+    """Compute and apply an agent move while streaming search progress."""
+    try:
+        events = manager.apply_agent_move_events(game_id)
+    except (
+        FileNotFoundError,
+        InvalidActionError,
+        KeyError,
+        TerminalStateError,
+        TurnError,
+        ValueError,
+    ) as exc:
+        raise _http_error(exc) from exc
+    return StreamingResponse(
+        _sse_events(events),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 def _agent_result_payload(result: AgentMoveResult) -> dict[str, object]:
     return {
         "action": result.action,
@@ -177,6 +207,17 @@ def _agent_result_payload(result: AgentMoveResult) -> dict[str, object]:
         "visits": list(result.visits),
         "policy": list(result.policy),
     }
+
+
+def _sse_events(events: Iterator[AgentSearchEvent]) -> Iterator[str]:
+    for event in events:
+        if not isinstance(event, AgentSearchEvent):
+            raise RuntimeError("agent stream yielded an unknown event")
+        yield _sse_event(event.event, event.payload)
+
+
+def _sse_event(event: str, payload: dict[str, object]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
 
 
 def _http_error(exc: Exception) -> HTTPException:

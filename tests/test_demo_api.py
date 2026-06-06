@@ -64,6 +64,49 @@ def test_demo_api_rejects_out_of_turn_agent_move() -> None:
     assert response.json()["detail"]["error"] == "wrong_turn"
 
 
+def test_demo_api_rejects_out_of_turn_streamed_agent_move() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/games",
+        json={"mode_id": "2d_6x7_k4", "human_mark": "X", "difficulty": "quick"},
+    )
+    game_id = created.json()["game"]["game_id"]
+
+    response = client.post(f"/games/{game_id}/agent-move-stream")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["error"] == "wrong_turn"
+
+
+def test_demo_api_streams_agent_move_progress_and_final_payload() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/games",
+        json={"mode_id": "2d_6x7_k4", "human_mark": "X", "difficulty": "quick"},
+    )
+    game = created.json()["game"]
+    legal_actions = [action for action in game["actions"] if action["legal"]]
+    human_move = client.post(
+        f"/games/{game['game_id']}/moves",
+        json={"action": legal_actions[0]["action"]},
+    )
+    assert human_move.status_code == 200
+
+    with client.stream(
+        "POST",
+        f"/games/{game['game_id']}/agent-move-stream",
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    assert "event: model_loading" in body
+    assert "event: search_started" in body
+    assert "event: simulation_progress" in body
+    assert "event: move_final" in body
+    assert '"simulations":4' in body
+    assert '"game_id":"' in body
+
+
 def test_demo_api_plays_one_human_and_agent_move_per_mode() -> None:
     client = TestClient(app)
 
